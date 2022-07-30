@@ -122,6 +122,7 @@ class BoardGuiTk(tk.Frame):
 
     def clear_arrows(self):
         self.canvas.delete('arrow')
+        
     def draw_arrow(self, start, stop, color='#0000FFA0'):
         '''
         algebraic notation
@@ -259,14 +260,17 @@ class BoardGuiTk(tk.Frame):
             #    self.on_move(move)
                 
 
-    def hilight(self, pos):
-        piece = self.chessboard[pos]
-        if piece is not None and (piece.color == self.chessboard.player_turn):
-            self.selected_piece = (self.chessboard[pos], pos)
-            possible_moves = self.chessboard[pos].possible_moves(pos)
-            possible_moves = [m for m in possible_moves if
-                              not self.chessboard.is_in_check_after_move(pos, m)]
-            self.hilighted = list(map(self.chessboard.number_notation, possible_moves))
+    def hilight(self, alg):
+        #arrows.color_square(alg, '#C3E10660', '#00000000',
+        #                    self.canvas, self.square_size)
+        row = 8 - int(alg[1])
+        col = ord(alg[0].lower()) - ord('a')
+        if (row + col) % 2:
+            hilight_color = '#B0CB02'
+        else:
+            hilight_color = '#A8C202'
+        self.redraw_square((7 - row, col), hilight_color)
+        return 
 
     def addpiece(self, name, image, row=0, column=0):
         '''Add a piece to the playing board'''
@@ -332,6 +336,7 @@ class BoardGuiTk(tk.Frame):
         if(filename not in self.icons):
             self.icons[filename] = ImageTk.PhotoImage(file=filename, width=32, height=32)
         self.addpiece(piecename, self.icons[filename], row, col)
+
         #self.placepiece(piecename, row, col)                    
 
     def draw_pieces(self):

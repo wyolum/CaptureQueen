@@ -1,3 +1,5 @@
+from collections import defaultdict
+import chess
 import os
 import time
 import tkinter
@@ -31,40 +33,82 @@ def getEngine():
     return __engine[0]
 
 
-last_fen = ''
+__last_fen = ''
 __after_job = False
 __last_best = None
 __current_depth = None
 __status = None
+__single_move = None
+
+def check_single_move(old_fen, new_fen):
+    '''
+    return algebric notation for move if new_fen is a single move from old_fen
+    '''
+    if old_fen:
+        b1 = chess.Board(old_fen)
+        for move in b1.legal_moves:
+            move = move.uci()
+            b1.push_uci(move)
+            if b1.fen() == new_fen:
+                return move
+            b1.pop()
+
+def zero():
+    return 0
+material_values = defaultdict(zero)
+material_values.update({'p':-1, 'P':1,
+                        'n':-3, 'N':3,
+                        'b':-3, 'B':3,
+                        'r':-5, 'R':5,
+                        'q':-9, 'Q':9,
+})
+def get_material(fen):
+    if fen:
+        pieces = fen.split()[0]
+        out = sum([material_values[c] for c in pieces])
+    else:
+        out = 0
+    return out
+
 def go():
-    global last_fen, __after_job, __last_best, __current_depth, __status
+    global __last_fen, __after_job, __last_best, __current_depth, __status
+    global __single_move
+    
     engine = getEngine()
     if os.path.exists('.fen'):
         fen = open('.fen').read().strip()
-        if fen != last_fen and len(fen) > 10:
-            print(fen)
+        if fen != __last_fen and len(fen) > 10:
+            __single_move = check_single_move(__last_fen, fen)
             gui.update(fen)
-            last_fen = fen
-            #gui.draw_arrow('c6', 'd8')
-            #gui.draw_arrow('e7', 'd8', '#FF0000A0')
+            __last_fen = fen
             engine.set_fen_position(fen)
             __current_depth = min_depth
             engine.set_depth(min_depth) ## keep it resposive
+            
     eval = engine.get_evaluation()
     centipawn= eval['value']
     gui.set_eval(centipawn)
     best = engine.get_best_move()
-    status = f'Best: {best}, Eval:{centipawn/100:.2f}, Depth:{__current_depth}'
-    if __status != status:
-        gui.label_status["text"] = status
-        __status = status
-        gui.refresh()
-        gui.clear_arrows()
-        gui.draw_arrow(best[:2], best[2:])
-    if __last_best != best:
-        gui.clear_arrows()
-        gui.draw_arrow(best[:2], best[2:])
-        __last_best = best
+    material = get_material(fen)
+    status = f'Best: {best}, Eval:{centipawn/100:+.2f}, Depth:{__current_depth}'
+    status += f' Material: {material:+2d}'
+
+    gui.refresh()
+    gui.clear_arrows()
+    gui.label_status["text"] = status
+    __status = status
+
+    gui.draw_arrow(best[:2], best[2:], '#0000FF80')
+
+    gui.clear_arrows()
+    gui.draw_arrow(best[:2], best[2:], '#0000FF80')
+    __last_best = best
+    if __single_move:
+        start = __single_move[:2]
+        stop = __single_move[2:]
+        gui.draw_arrow(__single_move[:2],
+                       __single_move[2:],
+                       color='#B0CB0260')
     if __current_depth < max_depth:
         __current_depth += 1
         engine.set_depth(__current_depth)
