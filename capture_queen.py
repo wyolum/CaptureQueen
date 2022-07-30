@@ -1,7 +1,7 @@
 import os
 import time
 import tkinter
-from chesslib import board
+
 from chesslib import gui_tkinter
 import subprocess
 import argparse
@@ -54,6 +54,7 @@ def go():
     centipawn= eval['value']
     gui.set_eval(centipawn)
     best = engine.get_best_move()
+
     status = f'Best: {best}, Eval:{centipawn/100:.2f}, Depth:{__current_depth}'
     if __status != status:
         gui.label_status["text"] = status
@@ -71,14 +72,12 @@ def go():
     __after_job = r.after(100, go)
     return
 
-game = board.Board()
 r = tkinter.Tk()
 r.attributes('-type', 'dock')
 r.geometry('+0+0')
 r.after(1000, go)
-gui = gui_tkinter.BoardGuiTk(r, game, engine=getEngine())
+gui = gui_tkinter.BoardGuiTk(r, engine=getEngine())
 gui.pack()
-gui.draw_pieces()
 input('>>')
 exit()
 #r.mainloop()

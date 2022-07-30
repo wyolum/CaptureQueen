@@ -1,10 +1,11 @@
 import os
 import glob
-from . import board
-from . import pieces
+import chess
+
 from . import arrows
 import tkinter as tk
 from PIL import Image, ImageTk
+
 
 color1 ='white'
 color2 = 'grey'
@@ -73,10 +74,10 @@ class BoardGuiTk(tk.Frame):
         return (self.columns * self.square_size,
                 self.rows * self.square_size)
 
-    def __init__(self, parent, chessboard, square_size=56, engine=None):
+    def __init__(self, parent, square_size=56, engine=None):
         self.color1 = color1
         self.color2 = color2
-        self.chessboard = chessboard
+        self.chessboard = chess.Board()
         self.square_size = square_size
         self.parent = parent
         self.from_square = None
@@ -130,16 +131,6 @@ class BoardGuiTk(tk.Frame):
         arrows.arrow_to(start, stop, color, outline,
                         self.canvas, self.square_size)
         return
-        print('start:', start)
-        start = self.chessboard.number_notation(start)
-        stop = self.chessboard.number_notation(stop)
-        start = ((start[1] + .5) * self.square_size,
-                 (7.5 - start[0]) * self.square_size)
-        print('start:', start)
-        stop = ((stop[1] + .5) * self.square_size,
-                (7.5 - stop[0]) * self.square_size)
-        print('start:', start)
-        self.canvas.create_line(start, stop, width=width, fill=color)
 
     def set_eval(self, centipawn):
         ### max: 800
@@ -341,9 +332,11 @@ class BoardGuiTk(tk.Frame):
             if piece is not None:
                 x,y = self.chessboard.number_notation(coord)
                 self.draw_piece(piece, x, y)
-
+    def validate_fen(self, fen):
+        return len(fen.strip().split()) == 6 ### TODO: improve this BS
+    
     def update(self, fen):
-        if self.chessboard.validate_fen(fen):
+        if self.validate_fen(fen):
             self.chessboard.load(fen)        
             self.refresh()
             self.draw_pieces()
