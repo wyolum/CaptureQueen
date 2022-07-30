@@ -2,6 +2,7 @@ import os
 import glob
 from . import board
 from . import pieces
+from . import arrows
 import tkinter as tk
 from PIL import Image, ImageTk
 
@@ -72,7 +73,7 @@ class BoardGuiTk(tk.Frame):
         return (self.columns * self.square_size,
                 self.rows * self.square_size)
 
-    def __init__(self, parent, chessboard, square_size=64, engine=None):
+    def __init__(self, parent, chessboard, square_size=56, engine=None):
         self.color1 = color1
         self.color2 = color2
         self.chessboard = chessboard
@@ -87,28 +88,74 @@ class BoardGuiTk(tk.Frame):
         canvas_height = self.rows * square_size
 
         tk.Frame.__init__(self, parent)
-
-        self.canvas = tk.Canvas(self, width=canvas_width, height=canvas_height, background="grey")
-        self.canvas.pack(side="top", fill="both", anchor="c", expand=True)
-
+        sub_frame = tk.Frame(self)
+        
+        self.canvas = tk.Canvas(sub_frame,
+                                width=canvas_width,
+                                height=canvas_height,
+                                background="grey")
+        
+        self.canvas.pack(side="left", fill="both", anchor="c", expand=True)
+        self.eval = tk.Canvas(sub_frame,
+                              width=square_size/5,
+                              height = 8 * square_size,
+                              background='darkgrey')
+        self.eval.pack(side="left", anchor="c")
+        self.set_eval(700)
         self.canvas.bind("<Configure>", self.refresh)
         self.canvas.bind("<Button-1>", self.click)
+        sub_frame.pack(side='top')
 
         self.statusbar = tk.Frame(self, height=64)
-        self.button_quit = tk.Button(self.statusbar, text="New", fg="black", command=self.reset)
-        self.button_quit.pack(side=tk.LEFT, in_=self.statusbar)
+        #self.button_quit = tk.Button(self.statusbar, text="New", fg="black", command=self.reset)
+        #self.button_quit.pack(side=tk.LEFT, in_=self.statusbar)
 
-        self.button_save = tk.Button(self.statusbar, text="Save", fg="black", command=self.chessboard.save_to_file)
-        self.button_save.pack(side=tk.LEFT, in_=self.statusbar)
+        #self.button_save = tk.Button(self.statusbar, text="Save", fg="black", command=self.chessboard.save_to_file)
+        #self.button_save.pack(side=tk.LEFT, in_=self.statusbar)
 
         self.label_status = tk.Label(self.statusbar, text="   White's turn  ", fg="black")
         self.label_status.pack(side=tk.LEFT, expand=0, in_=self.statusbar)
 
-        self.button_quit = tk.Button(self.statusbar, text="Quit", fg="black", command=self.parent.destroy)
-        self.button_quit.pack(side=tk.RIGHT, in_=self.statusbar)
+        #self.button_quit = tk.Button(self.statusbar, text="Quit", fg="black", command=self.parent.destroy)
+        #self.button_quit.pack(side=tk.RIGHT, in_=self.statusbar)
         self.statusbar.pack(expand=False, fill="x", side='bottom')
 
+    def clear_arrows(self):
+        self.canvas.delete('arrow')
+    def draw_arrow(self, start, stop, color='#0000FFA0'):
+        '''
+        algebraic notation
+        '''
+        outline = '#00000000'
+        arrows.arrow_to(start, stop, color, outline,
+                        self.canvas, self.square_size)
+        return
+        print('start:', start)
+        start = self.chessboard.number_notation(start)
+        stop = self.chessboard.number_notation(stop)
+        start = ((start[1] + .5) * self.square_size,
+                 (7.5 - start[0]) * self.square_size)
+        print('start:', start)
+        stop = ((stop[1] + .5) * self.square_size,
+                (7.5 - stop[0]) * self.square_size)
+        print('start:', start)
+        self.canvas.create_line(start, stop, width=width, fill=color)
 
+    def set_eval(self, centipawn):
+        ### max: 800
+        ### min: -800
+        if centipawn < -800:
+            centipawn = -800
+        if centipawn > 800:
+            centipawn = 800
+        y = 4 * self.square_size - centipawn * self.square_size / 210
+        #y = 4 * self.square_size
+        tags = ['eval_bar']
+        self.eval.delete(tags[0])
+        self.eval.create_rectangle(0, 8 * self.square_size,
+                                   self.square_size, y, fill='lightgrey',
+                                   tags=tags)
+        
     def redraw_square(self, coord, color=None):
         row, col = coord
         if color is None:
@@ -193,7 +240,6 @@ class BoardGuiTk(tk.Frame):
                 self.to_square = self.chessboard.number_notation(p2)
                 self.redraw_square(self.from_square, 'tan1')
                 self.redraw_square(self.to_square, 'tan1')
-
                 if self.chessboard.is_in_check(enemy):
                     algebraic_pos = self.chessboard.get_king_position(enemy)
                     enemy_king_loc = self.chessboard.number_notation(algebraic_pos)
@@ -266,6 +312,17 @@ class BoardGuiTk(tk.Frame):
         self.canvas.tag_raise("piece")
         self.canvas.tag_lower("square")
 
+        fen = self.chessboard.export()
+        color = fen.split()[1]
+        if color == 'w':
+            turn = 'white'
+        else:
+            turn = 'black'
+        if self.chessboard.is_in_check(turn):
+            algebraic_pos = self.chessboard.get_king_position(turn)
+            king_loc = self.chessboard.number_notation(algebraic_pos)
+            self.redraw_square(king_loc, 'red')
+
     def draw_piece(self, piece, row, col):
         x = (col * self.square_size)
         y = ((7-row) * self.square_size)
@@ -285,11 +342,17 @@ class BoardGuiTk(tk.Frame):
                 x,y = self.chessboard.number_notation(coord)
                 self.draw_piece(piece, x, y)
 
+    def update(self, fen):
+        if self.chessboard.validate_fen(fen):
+            self.chessboard.load(fen)        
+            self.refresh()
+            self.draw_pieces()
+            self.refresh()
+        
     def reset(self):
-        self.chessboard.load(board.FEN_STARTING)
-        self.refresh()
-        self.draw_pieces()
-        self.refresh()
+        fen = self.chessboard.load(board.FEN_STARTING)
+        update(fen)
+            
 
 def display(chessboard):
     root = tk.Tk()

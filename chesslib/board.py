@@ -251,7 +251,9 @@ class Board(dict):
             raise InvalidCoord
 
     def number_notation(self, coord):
-        return int(coord[1])-1, self.axis_y.index(coord[0])
+        coord = coord.upper()
+        out = int(coord[1])-1, self.axis_y.index(coord[0])
+        return out
 
     def is_in_bounds(self, coord):
         if coord[1] < 0 or coord[1] > 7 or\
@@ -261,7 +263,10 @@ class Board(dict):
     def clear(self):
         dict.clear(self)
         self.poistions = [None]
-        
+
+    def validate_fen(self, fen):
+        return len(fen.strip().split()) == 6
+    
     def load(self, fen):
         '''
             Import state from FEN notation
