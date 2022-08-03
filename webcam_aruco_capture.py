@@ -2,8 +2,8 @@ import cv2
 import cv2.aruco as aruco
 
 
-markerSize = 7
-totalMarkers=1000
+markerSize = 5
+totalMarkers=100
 key = getattr(aruco, f'DICT_{markerSize}X{markerSize}_{totalMarkers}')
 arucoDict = aruco.Dictionary_get(key)
 
@@ -26,6 +26,8 @@ vid = cv2.VideoCapture(0)
   ## 4056 x 3040
   ## 2592 × 1944
   ## 1920 x 1080
+vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1024)
+vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 786)
 #vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
 #vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 while(True):

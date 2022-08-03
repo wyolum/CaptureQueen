@@ -117,7 +117,7 @@ def go():
 
 game = board.Board()
 r = tkinter.Tk()
-r.attributes('-type', 'dock')
+#r.attributes('-type', 'dock')
 r.geometry('+0+0')
 r.after(1000, go)
 gui = gui_tkinter.BoardGuiTk(r, game, engine=getEngine())

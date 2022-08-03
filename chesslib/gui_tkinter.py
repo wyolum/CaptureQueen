@@ -296,7 +296,7 @@ class BoardGuiTk(tk.Frame):
             self.square_size = min(xsize, ysize)
 
         self.canvas.delete("square")
-        color = self.color2
+        color = self.color1
         for row in range(self.rows):
             color = self.color1 if color == self.color2 else self.color2
             for col in range(self.columns):
