@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import cv2.aruco as aruco
 import chess
+import grid_perspective
 
 markerSize = 5
 totalMarkers=100
@@ -17,14 +18,19 @@ arucoParam = aruco.DetectorParameters_create()
 #    print(x, getattr(arucoParam, x))
 board_map = {}
 alg_map = {}
+order = []
+ii = 0
 for row in range(8):
     for col in range(8):
         letter = chr(col + ord('a'))
         number = row + 1
         val = (7 - row) * 8 + col
         alg = f'{letter}{number}'
-        board_map[val] = [alg, None]
+        board_map[val] = [alg, None, None] # alg, box, center
         alg_map[alg] = val
+        order.append((alg, ii))
+        # print(alg, ii)
+        ii += 1
 
 def findArucoMarkers(img, draw=False):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -35,6 +41,23 @@ def findArucoMarkers(img, draw=False):
     if draw:
         cv2.aruco.drawDetectedMarkers(img, bboxs)
         cv2.aruco.drawDetectedMarkers(img, _bboxs)
+        if False:
+            if ids is not None and len(ids) > 0:
+                for bbox, id in zip(bboxs, ids):
+                    center = np.mean(bbox, axis=-2)[0]
+                    #cv2.circle(img, tuple(center), 2, (0, 0, 254), 2)
+                    #font = cv2.FONT_HERSHEY_SIMPLEX
+                    #cv2.putText(img, str(id), tuple(center), font, 1 ,
+                    #            (255, 255, 0))
+
+            if _ids is not None and len(_ids) > 0:
+                for bbox, id in zip(_bboxs, _ids):
+                    center = np.mean(bbox, axis=-2)[0]
+                    #cv2.circle(img, tuple(center), 2, (0, 254, 0), 2)
+                    #font = cv2.FONT_HERSHEY_SIMPLEX
+                    #cv2.putText(img, str(id), tuple(center), font, 1 ,
+                    #            (255, 255, 0))
+                
         #cv2.aruco.drawDetectedMarkers(img, rejected)
         #cv2.aruco.drawDetectedMarkers(img, _rejected)
 
@@ -51,7 +74,18 @@ def findArucoMarkers(img, draw=False):
     out_ids = np.array(out_ids).ravel()
     for id, bbox in zip(out_ids, out_bboxs):
         if 0 <= id and id < 64:
+            last_pos = board_map[id][2]
+            pos = np.mean(bbox[0], axis=0)
+            if last_pos is not None:
+                d = np.linalg.norm(last_pos - pos)
+                if d > 2: ### board moved! clear out last known positions
+                    print(id, 'board moved!')
+                    for i in range(64):
+                        board_map[i][1] = None
+                        board_map[i][2] = None
             board_map[id][1] = bbox[0]
+            board_map[id][2] = pos
+                    
     return out_bboxs, out_ids
         
 def alg_dist(alg0, alg1):
@@ -94,7 +128,7 @@ def crop_square(frame, alg):
         stops = np.max(bbox, axis=0).astype(int) +1
         bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
 
-        cv2.polylines(frame, bbox, True, (0, 0, 255), 1)
+        #cv2.polylines(frame, bbox, True, (0, 0, 255), 1)
         return frame[starts[1]:stops[1],starts[0]:stops[0]]
         
 def val_to_coords(val):
@@ -176,10 +210,89 @@ vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1024)
 vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 786)
 
 move_number = 1
+
+DEG = np.pi / 180
+guess = [-100, -300, 10000, 12 * DEG, 0 * DEG, 90 * DEG]
+def linfit(centers):
+    ## try y = mx + b
+    x, y = centers.T
+    n = len(centers)
+    A = np.column_stack([x, np.ones(n)])
+    return np.linalg.inv(A.T @ A) @ (A.T @ y)
+
+def find_intersection(lines):
+    ### find intersection of two lines
+    ### a0x + b0 = a1x + b1
+    ### x(a0 - a1) = b1 - b0
+    ### x = (b1 - b0) / (a0 - a1)
+    lines = np.array(lines)
+    a0, a1 = lines[:, 0]
+    b0, b1 = lines[:, 1]
+    x = (b1 - b0) / (a0 - a1)
+    y = a0 * x + b0
+    return np.array([x, y])
+
+def average_intersection(lines):
+    lines = np.array(lines)
+    n = len(lines)
+    pts = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            pts.append(find_intersection(lines[[i, j]]))
+    return np.mean(pts, axis=0)
+
+def draw_perspective(img, ids, centers):
+    ### find vanishing point for columns
+    algs = [board_map[id][0] for id in ids]
+    coords = np.array([val_to_coords(id) for id in ids])
+    cols = coords[:,0]
+    rows = coords[:,1]
+    row_lines = []
+    for r in set(rows):
+        keep = rows == r
+        line = centers[keep]
+        if len(line) > 1:
+            a, b = linfit(centers[keep])
+            row_lines.append([a, b])
+            x = np.array([-1000, 1000])
+            y = (a * x + b).astype(int)
+            cv2.line(img, (x[0], y[0]), (x[1], y[1]), (0, 255, 123), 2)
+    vanish = average_intersection(row_lines).astype(int)
+    cv2.circle(img, tuple(vanish), 4, (56, 123, 26), 4)
+    col_lines = []
+    for c in set(cols):
+        keep = cols == c
+        line = centers[keep]
+        if len(line) > 1:
+            a, b = linfit(centers[keep])
+            col_lines.append([a, b])
+            x = np.array([-1000, 1000])
+            y = (a * x + b).astype(int)
+            cv2.line(img, (x[0], y[0]), (x[1], y[1]), (255, 123, 0), 2) 
+    vanish = average_intersection(col_lines).astype(int)
+    cv2.circle(img, tuple(vanish), 4, (56, 123, 26), 4)
+            
 while(True):
     # Capture the video frame
     ret, frame = vid.read()
     bboxs, free_ids = findArucoMarkers(frame, draw=True)
+    centers = np.mean(bboxs, axis=-2).squeeze()
+    focal_length = 1000
+    side = 1000
+    virtual_board = grid_perspective.ChessBoard(side, 'g', 'w')
+    centers = []
+    ids = []
+    for id in range(64):
+        bbox = board_map[id][1]
+        if bbox is not None:
+            center = np.mean(bbox, axis=0)
+            centers.append(center)
+            ids.append(id)
+    ids = np.array(ids)
+    centers = np.array(centers)
+    guess = draw_perspective(frame, ids, centers)
+    
+        
     if True:
         for letter in 'abcdefgh':
             for number in range(1, 9):
@@ -195,7 +308,7 @@ while(True):
             alg = board.move_stack[-1].uci()
             crop_square(frame, alg[:2])
             crop_square(frame, alg[2:])
-    cv2.imshow('frame', frame[::-1,::-1])
+    cv2.imshow('frame', frame)# [::-1,::-1])
     key = cv2.waitKey(1)
     if key & 0xFF == ord('q'):
         break

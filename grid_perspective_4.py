@@ -155,16 +155,6 @@ print(i)
 meas_camera = Camera(focal_length, px, py, pz, ar, ap, ay)
 test_camera = Camera(focal_length, 0, -500, 5000, 20 * DEG, 5 * DEG, 5 * DEG)
 
-### read true positions:
-with open('true_positions.txt') as f:
-    lines = f.readlines()
-data = [l.split() for l in lines]
-data = [[l[0], float(l[1]), float(l[2])] for l in data]
-dict = {}
-for l in data:
-    dict[l[0]] = l[1:]
-
-
 def minme(xyz):
     test_camera = Camera(focal_length, xyz[0], xyz[1], xyz[2], ar, ap, ay)
     return get_error(board, meas_camera, test_camera)
@@ -206,13 +196,13 @@ if False:
     print(ans)
 guess = [-100, -300, 5000, 0 * DEG, 0 * DEG, 0 * DEG]
 guss_camera = Camera(focal_length, *guess)
-#ans = fmin_powell(minmerpy, guess)
-#print(ans)
-#soln_camera = Camera(focal_length, *ans)
+ans = fmin_powell(minmerpy, guess)
+print(ans)
+soln_camera = Camera(focal_length, *ans)
 
 fig, ax = pl.subplots(1)
 meas_camera.snapshot(board, ax)
-#soln_camera.snapshot(board, ax)
+soln_camera.snapshot(board, ax)
 guss_camera.snapshot(other_board, ax)
 #pl.axes('equal')
 pl.show()

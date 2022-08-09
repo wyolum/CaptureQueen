@@ -42,8 +42,10 @@ for i in range(8):
         plt.imshow(img,
                    extent=extent,
                    cmap = mpl.cm.gray, interpolation = "nearest", zorder=100)
-        #t = plt.text(j * s, (7 - i) * s, val, color='r', fontsize=24)
-        #t.set_zorder(100)
+        t = plt.text(j * s - s/2,
+                     (7 - i) * s - s/2, val, color='r', fontsize=10,
+                     ha='left', va='bottom')
+        t.set_zorder(100)
 color = 'black'
 size = 14
 for i in range(8):
