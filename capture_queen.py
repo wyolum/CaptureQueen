@@ -112,14 +112,14 @@ def go():
     if __current_depth < max_depth:
         __current_depth += 1
         engine.set_depth(__current_depth)
-    __after_job = r.after(100, go)
+    __after_job = r.after(1, go)
     return
 
 game = board.Board()
 r = tkinter.Tk()
 #r.attributes('-type', 'dock')
-r.geometry('+0+0')
-r.after(1000, go)
+#r.geometry('+0+0') ## place in touch screen
+r.after(100, go)
 gui = gui_tkinter.BoardGuiTk(r, game, engine=getEngine())
 gui.pack()
 gui.draw_pieces()
