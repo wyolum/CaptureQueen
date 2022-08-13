@@ -600,7 +600,8 @@ while(True):
     centers = np.array(centers)
     if len(free_ids) > 0:
         guess = draw_perspective(frame, ids, centers)
-    cv2.imshow('frame', frame)# [::-1,::-1])
+    #cv2.imshow('frame', frame)# [::-1,::-1])
+    cv2.imshow('frame', np.transpose(frame, (1, 0, 2))[:,::-1])
     key = cv2.waitKey(1)
     if key & 0xFF == ord('q'):
         break

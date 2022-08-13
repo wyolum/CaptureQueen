@@ -9,6 +9,8 @@ import subprocess
 import argparse
 from stockfish import Stockfish
 
+commentary = True
+
 def exit():
     if __after_job:
         r.after_cancel(__after_job)
@@ -25,8 +27,12 @@ n_player = 2
 
 
 __engine = [None]
-max_depth = 16
-min_depth = 10
+if commentary:
+    max_depth = 14
+    min_depth = 6
+else:
+    max_depth = 0
+    min_depth = 0
 def getEngine():
     if __engine[0] is None:
         __engine[0] = Stockfish(path="/usr/games/stockfish", depth=depth)
@@ -84,28 +90,39 @@ def go():
             engine.set_fen_position(fen)
             __current_depth = min_depth
             engine.set_depth(min_depth) ## keep it resposive
-            
-    eval = engine.get_evaluation()
-    centipawn= eval['value']
-    gui.set_eval(centipawn)
-    best = engine.get_best_move()
-    material = get_material(fen)
-    status = f'Best: {best}, Eval:{centipawn/100:+.2f}, Depth:{__current_depth}'
-    status += f' Material: {material:+2d}'
+    if commentary:
+        eval = engine.get_evaluation()
+        centipawn= eval['value']
+        gui.set_eval(centipawn)
+        best = engine.get_best_move()
+        material = get_material(fen)
+        status = f'Best: {best}, Eval:{centipawn/100:+.2f}, Depth:{__current_depth}'
+        status += f' Material: {material:+2d}'
+    else:
+        gui.set_eval(0)
+        if __last_fen.split()[-5] == 'w':
+            color = 'White'
+        else:
+            color = 'Black'
+        status = f"{color}'s turn"
 
-    gui.refresh()
-    gui.clear_arrows()
     gui.label_status["text"] = status
-    __status = status
+    gui.refresh()
+    if commentary:
+        gui.clear_arrows()
+        __status = status
+        if best is not None:
+            gui.draw_arrow(best[:2], best[2:], '#0000FF80')
 
-    gui.draw_arrow(best[:2], best[2:], '#0000FF80')
-
-    gui.clear_arrows()
-    gui.draw_arrow(best[:2], best[2:], '#0000FF80')
-    __last_best = best
+            gui.clear_arrows()
+            gui.draw_arrow(best[:2], best[2:], '#0000FF80')
+        __last_best = best
     if __single_move:
         start = __single_move[:2]
         stop = __single_move[2:]
+        if not commentary:
+            gui.clear_arrows()
+            
         gui.draw_arrow(__single_move[:2],
                        __single_move[2:],
                        color='#B0CB0260')
