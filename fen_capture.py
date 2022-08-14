@@ -92,13 +92,27 @@ def alg_dist(alg0, alg1):
     dy = ord(alg0[1]) - ord(alg1[1])
     return np.sqrt(dx ** 2 + dy ** 2), dx, dy
 
-def crop_square(frame, alg, coeff, draw=False):
+def get_board_bbox(coeff):
+    coords = np.array([
+        [-0.5,  7.5],
+        [-0.5, -0.5],
+        [ 7.5, -0.5],
+        [ 7.5,  7.5],
+    ]) 
+    bbox = predict(coords, coeff).astype(int)
+    return bbox
+    
+def get_bbox(alg, coeff):
     i, j = val_to_coords(alg_map[alg])
     coords = np.array([[-1, -1],
                        [-1,  1],
                        [ 1,  1],
                        [ 1, -1]]) / 2 + np.array([i, j])
     bbox = predict(coords, coeff).astype(int)
+    return bbox
+
+def crop_square(frame, alg, coeff, draw=False):
+    bbox = get_bbox(alg, coeff)
     starts = np.min(bbox, axis=0).astype(int)
     stops = np.max(bbox, axis=0).astype(int) +1
     bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
@@ -148,7 +162,7 @@ def find_move(frame, free):
         delta = cv2.absdiff(frame, last_frame)
         imgray = cv2.cvtColor(delta,cv2.COLOR_BGR2GRAY)
         ret,thresh = cv2.threshold(imgray,50,255,0)
-        cv2.imshow('squares', np.transpose(frame, (1, 0, 2))[:,::-1])
+        #cv2.imshow('squares', np.transpose(frame, (1, 0, 2))[:,::-1])
     else:
         thresh = None
     last_frame = frame.copy()
@@ -164,6 +178,22 @@ def find_move(frame, free):
     xy = xy[keep]
     ij = ij[keep]
     coeff = fit(ij, xy)
+    if len(ij) > 63:
+        board_bbox = get_board_bbox(coeff)
+        # All points are in format [cols, rows]
+        input_pts = np.float32(board_bbox)
+        output_pts = np.float32([[0, 0],
+                                 [0, IM_HEIGHT - 1],
+                                 [IM_HEIGHT - 1, IM_HEIGHT - 1],
+                                 [IM_HEIGHT - 1, 0]])
+        # Compute the perspective transform M
+        M = cv2.getPerspectiveTransform(input_pts,output_pts)
+        rect = cv2.warpPerspective(frame,M,(IM_HEIGHT, IM_HEIGHT),
+                                   flags=cv2.INTER_LINEAR)        
+        #board_bbox = board_bbox.reshape((1, -1, 1, 2)).astype(np.int32)
+        #cv2.polylines(frame, board_bbox, True, (255, 255, 255), 2)
+        #cv2.imshow("board", frame)
+        cv2.imshow("rect", rect)
 
     start = time.time()
     changes = []
@@ -214,12 +244,25 @@ def find_move(frame, free):
         candidates = [candidates[i] for i in sorted]
         out = candidates[-1][0].uci()
     if out is not None:
-        sq, bbox = crop_square(frame, out[:2],
-                               coeff, draw=True)
-        sq, bbox = crop_square(frame, out[2:4],
-                               coeff, draw=True)
+        #sq, bbox = crop_square(frame, out[:2],
+        #                       coeff, draw=True)
+        #sq, bbox = crop_square(frame, out[2:4],
+        #                       coeff, draw=True)
         #cv2.imshow('piece', sq)
-        cv2.imshow('squares', np.transpose(frame, (1, 0, 2))[:,::-1])
+        #cv2.imshow('squares', np.transpose(frame, (1, 0, 2))[:,::-1])
+
+        delta = IM_HEIGHT / 8
+        box = np.array([[-1, -1],
+                        [-1,  1],
+                        [ 1,  1],
+                        [ 1, -1.]]) * .5 * delta
+        for u in range(2):
+            i, j = val_to_coords(alg_map[out[2 * u:2 * (u + 1)]])
+            bbox = box + np.int32([(i + .5) * delta, (8 - j - .5) * delta])
+            bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
+            cv2.polylines(rect, bbox, True, RED, 2)
+        cv2.imshow("rect", rect)
+
         board.push_uci(out)
         print(board.fen())
         print(board.fen(), file=open(".fen", 'w'), flush=True)
@@ -574,7 +617,7 @@ virtual_board = ChessBoard(side, 'g', 'w')
 while(True):
     # Capture the video frame
     ret, frame = vid.read()
-
+    
     #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     #frame = cv2.undistort(frame,camera_matrix,distorition_coeff,None)
     # cv2.imwrite("img/board.png", frame)
@@ -600,6 +643,7 @@ while(True):
     centers = np.array(centers)
     if len(free_ids) > 0:
         guess = draw_perspective(frame, ids, centers)
+        
     #cv2.imshow('frame', frame)# [::-1,::-1])
     cv2.imshow('frame', np.transpose(frame, (1, 0, 2))[:,::-1])
     key = cv2.waitKey(1)

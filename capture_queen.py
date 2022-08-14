@@ -9,7 +9,7 @@ import subprocess
 import argparse
 from stockfish import Stockfish
 
-commentary = True
+commentary = False
 
 def exit():
     if __after_job:
