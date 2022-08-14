@@ -1,23 +1,11 @@
-import glob
+import os.path
 import time
 import re
 import numpy as np
 import cv2
-import cv2.aruco as aruco
 import chess
-from grid_perspective import fit, ChessBoard, Camera
 from board_map import fit, predict
 
-markerSize = 5
-totalMarkers=100
-key = getattr(aruco, f'DICT_{markerSize}X{markerSize}_{totalMarkers}')
-arucoDict = aruco.Dictionary_get(key)
-arucoParam = aruco.DetectorParameters_create()
-
-#arucoParam.minDistanceToBorder = 2
-#arucoParam.adaptiveThreshWinSizeMax = 40
-#for x in dir(arucoParam):
-#    print(x, getattr(arucoParam, x))
 board_map = {}
 alg_map = {}
 order = []
@@ -102,23 +90,28 @@ def get_board_bbox(coeff):
     bbox = predict(coords, coeff).astype(int)
     return bbox
     
-def get_bbox(alg, coeff):
-    i, j = val_to_coords(alg_map[alg])
+def get_bbox(alg):
+    i = ord(alg[0]) - ord('a') + 1
+    j = 9 - int(alg[1]) 
+    delta = IM_HEIGHT / 9
     coords = np.array([[-1, -1],
                        [-1,  1],
                        [ 1,  1],
-                       [ 1, -1]]) / 2 + np.array([i, j])
-    bbox = predict(coords, coeff).astype(int)
+                       [ 1, -1]]) / 6 + np.array([i, j])
+    bbox = coords * delta
     return bbox
 
-def crop_square(frame, alg, coeff, draw=False):
-    bbox = get_bbox(alg, coeff)
+def draw_square(rect, alg, color, thickness):
+    bbox = get_bbox(alg).astype(np.int32)
+    cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
+    
+def crop_square(rect, alg):
+    bbox = get_bbox(alg)
     starts = np.min(bbox, axis=0).astype(int)
-    stops = np.max(bbox, axis=0).astype(int) +1
+    stops = np.max(bbox, axis=0).astype(int) + 1
     bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-    if draw:
-        cv2.polylines(frame, bbox, True, (0, 0, 255), 1)
-    return frame[starts[1]:stops[1],starts[0]:stops[0]], bbox
+    out = rect[starts[1]:stops[1],starts[0]:stops[0]], bbox
+    return out
         
 def val_to_coords(val):
     row, col = divmod(val, 8)
@@ -129,6 +122,7 @@ GREEN = (0, 255, 0)
 BLUE = (255, 0, 0)
 CYAN = (255, 255, 0)
 PURPLE = (255, 0, 355)
+WHITE = (255, 255, 255)
 
 board = chess.Board()
 #fen = open('.fen').read().strip()
@@ -155,47 +149,23 @@ def average_square(data):
     
     return np.mean(data[y:-y,x:-x])
 
-last_frame = None
-def find_move(frame, free):
-    global last_frame
-    if last_frame is not None:
-        delta = cv2.absdiff(frame, last_frame)
+last_rect = None
+def find_move(rect):
+    global last_rect
+    if last_rect is not None:
+        delta = cv2.absdiff(rect, last_rect)
         imgray = cv2.cvtColor(delta,cv2.COLOR_BGR2GRAY)
-        ret,thresh = cv2.threshold(imgray,50,255,0)
-        #cv2.imshow('squares', np.transpose(frame, (1, 0, 2))[:,::-1])
+        imgreen = delta[:,:,1]
+        imred = delta[:,:,0]
+        imblue = delta[:,:,2]
+        thresh = np.max(delta, axis=-1)
+        #ret,thresh = cv2.threshold(imgreen,25,255,0)
+        #thresh = np.any(np.where(delta < 10, False, True), axis=2)  * 255
+            
     else:
         thresh = None
-    last_frame = frame.copy()
-    xy = np.array([board_map[id][2] for id in board_map if id >= 0 and
-                   board_map[id][2] is not None])
-    ij = np.array([val_to_coords(id) for id in board_map if id >= 0 and
-                   board_map[id][2] is not None])
-    if len(np.shape(xy)) < 2:
-        return
-    if len(xy) < 1:
-        return
-    keep = np.logical_not(np.isnan(xy[:,0]))
-    xy = xy[keep]
-    ij = ij[keep]
-    coeff = fit(ij, xy)
-    if len(ij) > 63:
-        board_bbox = get_board_bbox(coeff)
-        # All points are in format [cols, rows]
-        input_pts = np.float32(board_bbox)
-        output_pts = np.float32([[0, 0],
-                                 [0, IM_HEIGHT - 1],
-                                 [IM_HEIGHT - 1, IM_HEIGHT - 1],
-                                 [IM_HEIGHT - 1, 0]])
-        # Compute the perspective transform M
-        M = cv2.getPerspectiveTransform(input_pts,output_pts)
-        rect = cv2.warpPerspective(frame,M,(IM_HEIGHT, IM_HEIGHT),
-                                   flags=cv2.INTER_LINEAR)        
-        #board_bbox = board_bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-        #cv2.polylines(frame, board_bbox, True, (255, 255, 255), 2)
-        #cv2.imshow("board", frame)
-        cv2.imshow("rect", rect)
+    last_rect = rect.copy()
 
-    start = time.time()
     changes = []
     if thresh is None:
         return
@@ -206,29 +176,29 @@ def find_move(frame, free):
         if move.promotion and move.promotion != chess.QUEEN:
             continue
         uci = move.uci()
-        sq0, bbox0 = crop_square(thresh, uci[:2], coeff)
-        sq1, bbox1 = crop_square(thresh, uci[2:4], coeff)
+        sq0, bbox0 = crop_square(thresh, uci[:2])
+        sq1, bbox1 = crop_square(thresh, uci[2:4])
         sqs = [sq0, sq1]
         if board.is_castling(move):
             if uci[2] == 'g': ## kingside
                 row = uci[3]
-                sq2, bbox2 = crop_square(thresh, f'h{row}', coeff)
-                sq3, bbox3 = crop_square(thresh, f'f{row}', coeff)
+                sq2, bbox2 = crop_square(thresh, f'h{row}')
+                sq3, bbox3 = crop_square(thresh, f'f{row}')
                 sqs.extend([sq2, sq3])
             if uci[2] == 'c': ## queen
                 row = uci[3]
-                sq2, bbox2 = crop_square(thresh, f'a{row}', coeff)
-                sq3, bbox3 = crop_square(thresh, f'd{row}', coeff)
+                sq2, bbox2 = crop_square(thresh, f'a{row}')
+                sq3, bbox3 = crop_square(thresh, f'd{row}')
                 sqs.extend([sq2, sq3])
         if board.is_en_passant(move):
             col = uci[2]
             row = uci[1]
-            sq2, bbox2 = crop_square(thresh, f'{col}{row}', coeff)
+            sq2, bbox2 = crop_square(thresh, f'{col}{row}')
             sqs.append(sq2)
             
         change = np.array([int(np.sum(sq)) for sq in sqs])
         total_change = np.sum(change)
-        change_thresh = 25000
+        change_thresh = 1000
         change_count = np.sum(change > change_thresh)
         #print(uci, move.from_square, move.to_square, move.promotion,
         #      board.is_en_passant(move),
@@ -244,13 +214,6 @@ def find_move(frame, free):
         candidates = [candidates[i] for i in sorted]
         out = candidates[-1][0].uci()
     if out is not None:
-        #sq, bbox = crop_square(frame, out[:2],
-        #                       coeff, draw=True)
-        #sq, bbox = crop_square(frame, out[2:4],
-        #                       coeff, draw=True)
-        #cv2.imshow('piece', sq)
-        #cv2.imshow('squares', np.transpose(frame, (1, 0, 2))[:,::-1])
-
         delta = IM_HEIGHT / 8
         box = np.array([[-1, -1],
                         [-1,  1],
@@ -260,9 +223,13 @@ def find_move(frame, free):
             i, j = val_to_coords(alg_map[out[2 * u:2 * (u + 1)]])
             bbox = box + np.int32([(i + .5) * delta, (8 - j - .5) * delta])
             bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-            cv2.polylines(rect, bbox, True, RED, 2)
         cv2.imshow("rect", rect)
 
+        
+        draw_square(thresh, out[0:2], WHITE, 1)
+        draw_square(thresh, out[2:4], WHITE, 1)
+        cv2.imshow('thresh', thresh)
+        
         board.push_uci(out)
         print(board.fen())
         print(board.fen(), file=open(".fen", 'w'), flush=True)
@@ -605,61 +572,112 @@ def draw_perspective(img, ids, centers):
 
             
 
-npzs = glob.glob('CameraCalibrate/results/*.npz')
-npzs.sort()
-npz = npzs[-1]
-results = np.load(npz)
-camera_matrix = results['camera_matrix']
-distorition_coeff = results['distorition_coeff']
-side = 2000
-virtual_board = ChessBoard(side, 'g', 'w')
+def findChessboardCorners(n_ave=10):
+    all_corners = []
+    while len(all_corners) < n_ave:
+        ret, frame = vid.read()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        ret, corners = cv2.findChessboardCorners(gray, (7, 7))
+        if ret:
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            corners = corners.squeeze()
+            sort = corners[:,0] + IM_HEIGHT * corners[:,1]
+            corners = corners[np.argsort(sort)]
+            corners = corners.reshape((7, 7, 2))
+            for i, row in enumerate(corners):
+                row = row[np.argsort(row[:,0])]
+                corners[i] = row
+            all_corners.append(corners)
+    all_corners = np.array(all_corners)
+    corners = np.mean(all_corners, axis=0)
+    return corners
 
-while(True):
+def calibrate():
     # Capture the video frame
+
+    corners = findChessboardCorners()
+    ij = np.empty((49, 2))
+    xy = np.empty((49, 2))
+    for i, row in enumerate(corners):
+        for j, pos in enumerate(row):
+            pos = tuple(pos.astype(int))
+            #cv2.circle(gray, pos, 10, (56, 123, 26), 4)
+            #image = cv2.putText(gray, f'{i}{j}', pos, font, 
+            #                    1, RED, 1, cv2.LINE_AA)
+            ij[i * 7 + j] = i, j
+            xy[i * 7 + j] = pos
+    coeff = fit(ij, xy)
+    coords = np.array([[-1, -1],
+                       [-1,  7],
+                       [ 7,  7],
+                       [ 7, -1]])[::-1]
+    coords = np.array([[-1.5, -1.5],
+                       [-1.5,  7.5],
+                       [ 7.5,  7.5],
+                       [ 7.5, -1.5]])[::-1]
+    bbox = predict(coords, coeff).astype(int)
+    input_pts = np.float32(np.roll(bbox, 0, axis=0))
+    output_pts = np.float32([[0, 0],
+                             [0, IM_HEIGHT - 1],
+                             [IM_HEIGHT - 1, IM_HEIGHT - 1],
+                             [IM_HEIGHT - 1, 0]])
+    print(input_pts)
+    print(output_pts)
+    M = cv2.getPerspectiveTransform(input_pts,output_pts)
+    while True:
+        ret, frame = vid.read()
+        rect = cv2.warpPerspective(frame, M, (IM_HEIGHT, IM_HEIGHT),
+                                   flags=cv2.INTER_LINEAR)        
+
+        cv2.imshow('rect', rect)
+        key = cv2.waitKey(1)
+        if key & 0xFF == ord('q'):
+            break
+    print('Calibaration complete.  You may now set up board.')
+    return M, coeff
+
+cal_npz = 'perspective_matrix.npz'
+if False:
+    perspective_matrix, ij_coeff = calibrate()
+    np.savez(cal_npz, perspective_matrix=perspective_matrix)
+    print('wrote', cal_npz)
+perspective_matrix = np.load(cal_npz)['perspective_matrix']
+
+game_on = False
+__last_move = False
+while True:
     ret, frame = vid.read()
+    rect = cv2.warpPerspective(frame, perspective_matrix,
+                               (IM_HEIGHT, IM_HEIGHT),
+                               flags=cv2.INTER_LINEAR)
+    if not game_on:
+        for i in [1, 2, 7, 8]:
+            for letter in 'abcdefgh':
+                draw_square(rect, f'{letter}{i}', GREEN, 2)
     
-    #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    #frame = cv2.undistort(frame,camera_matrix,distorition_coeff,None)
-    # cv2.imwrite("img/board.png", frame)
-    bboxs, free_ids = findArucoMarkers(frame, draw=False)
-    if len(free_ids) == 0:
-        continue
-    centers = np.mean(bboxs, axis=-2).squeeze()
-    focal_length = 1000
-    side = 1000
-    centers = []
-    ids = []
-    for id in board_map:
-        bbox = board_map[id][1]
-        center = board_map[id][2]
-        if bbox is not None:
-            center = np.mean(bbox, axis=0)
-            centers.append(center)
-            ids.append(id)
-        elif center is not None:
-            ids.append(id)
-            centers.append(center)
-    ids = np.array(ids)
-    centers = np.array(centers)
-    if len(free_ids) > 0:
-        guess = draw_perspective(frame, ids, centers)
-        
-    #cv2.imshow('frame', frame)# [::-1,::-1])
-    cv2.imshow('frame', np.transpose(frame, (1, 0, 2))[:,::-1])
     key = cv2.waitKey(1)
     if key & 0xFF == ord('q'):
         break
     if key & 0xFF == ord('x'):
+        game_on = True
         print('clock')
         for i in range(10):
             ret, frame = vid.read() ## clear buffer
             
         png = f'captures/{move_number:04d}.png'
         move_number += 1
-        cv2.imwrite(png, frame)
-        move = find_move(frame, free_ids)
+        rect = cv2.warpPerspective(frame, perspective_matrix,
+                                   (IM_HEIGHT, IM_HEIGHT),
+                                   flags=cv2.INTER_LINEAR)
+        cv2.imwrite(png, rect)
+        move = find_move(rect)
         if move:
+            __last_move = move
             open('.fen', 'w').write(board.fen())
+    if __last_move:
+        draw_square(rect, __last_move[0:2], RED, 1)
+        draw_square(rect, __last_move[2:4], RED, 1)
+    cv2.imshow('rect', rect)
     if key & 0xFF == ord('w'):
         print('code here for special handling')
     # the 'q' button is set as the
