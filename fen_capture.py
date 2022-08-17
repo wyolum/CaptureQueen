@@ -80,19 +80,23 @@ def alg_dist(alg0, alg1):
     dy = ord(alg0[1]) - ord(alg1[1])
     return np.sqrt(dx ** 2 + dy ** 2), dx, dy
 
-def get_board_bbox(coeff):
-    coords = np.array([
+def get_board_bbox():
+    delta = IM_HEIGHT / 9
+    bbox = (np.array([
         [-0.5,  7.5],
         [-0.5, -0.5],
         [ 7.5, -0.5],
         [ 7.5,  7.5],
-    ]) 
-    bbox = predict(coords, coeff).astype(int)
+    ]) + 1) * delta
     return bbox
     
+side = chess.BLACK
 def get_bbox(alg):
     i = ord(alg[0]) - ord('a') + 1
-    j = 9 - int(alg[1]) 
+    j = 9 - int(alg[1])
+    if side == chess.BLACK:
+        j = 9 - j
+        i = 9 - i
     delta = IM_HEIGHT / 9
     coords = np.array([[-1, -1],
                        [-1,  1],
@@ -123,6 +127,8 @@ BLUE = (255, 0, 0)
 CYAN = (255, 255, 0)
 PURPLE = (255, 0, 355)
 WHITE = (255, 255, 255)
+BLACK = (0, 0 ,0)
+GRAY = (128, 128, 128)
 
 board = chess.Board()
 #fen = open('.fen').read().strip()
@@ -154,11 +160,17 @@ def find_move(rect):
     global last_rect
     if last_rect is not None:
         delta = cv2.absdiff(rect, last_rect)
+        sum_delta = np.sum(delta)
+        BUMP_THRESH = 5000000
+        if sum_delta > BUMP_THRESH:
+            print('Board moved {sum_delta} > {BUMP_THRESH}')
         imgray = cv2.cvtColor(delta,cv2.COLOR_BGR2GRAY)
         imgreen = delta[:,:,1]
         imred = delta[:,:,0]
         imblue = delta[:,:,2]
         thresh = np.max(delta, axis=-1)
+        cv2.imshow('thresh', thresh)
+        
         #ret,thresh = cv2.threshold(imgreen,25,255,0)
         #thresh = np.any(np.where(delta < 10, False, True), axis=2)  * 255
             
@@ -198,7 +210,7 @@ def find_move(rect):
             
         change = np.array([int(np.sum(sq)) for sq in sqs])
         total_change = np.sum(change)
-        change_thresh = 1000
+        change_thresh = 5000
         change_count = np.sum(change > change_thresh)
         #print(uci, move.from_square, move.to_square, move.promotion,
         #      board.is_en_passant(move),
@@ -651,14 +663,18 @@ while True:
                                (IM_HEIGHT, IM_HEIGHT),
                                flags=cv2.INTER_LINEAR)
     if not game_on:
-        for i in [1, 2, 7, 8]:
+        for i in [1, 2]:
             for letter in 'abcdefgh':
-                draw_square(rect, f'{letter}{i}', GREEN, 2)
-    
-    key = cv2.waitKey(1)
-    if key & 0xFF == ord('q'):
+                color = WHITE
+                draw_square(rect, f'{letter}{i}', WHITE, 2)
+                draw_square(rect, f'{letter}{9-i}', GRAY, 2)
+        bbox = get_board_bbox().astype(int)
+        cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
+
+    key = chr(cv2.waitKey(1) & 0xFF)
+    if key == 'q':
         break
-    if key & 0xFF == ord('x'):
+    if key == 'x':
         game_on = True
         print('clock')
         for i in range(10):
@@ -674,12 +690,30 @@ while True:
         if move:
             __last_move = move
             open('.fen', 'w').write(board.fen())
+
     if __last_move:
         draw_square(rect, __last_move[0:2], RED, 1)
         draw_square(rect, __last_move[2:4], RED, 1)
     cv2.imshow('rect', rect)
-    if key & 0xFF == ord('w'):
-        print('code here for special handling')
+    if not game_on:
+        balance = 0
+        for letter in 'abcdefgh':
+            for row in [1, 2]:
+                
+                balance += np.mean(crop_square(rect, f'{letter}{row}')[0])
+                balance -= np.mean(crop_square(rect, f'{letter}{9-row}')[0])
+        if balance > 750:
+            pass
+        else:
+            if side == chess.BLACK:
+                side = chess.WHITE
+            else:
+                side = chess.BLACK
+    if False and not game_on and key == 's':
+        if side == chess.WHITE:
+            side = chess.BLACK
+        else:
+            side = chess.WHITE
     # the 'q' button is set as the
     # quitting button you may use any
     # desired button of your choice

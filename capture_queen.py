@@ -9,6 +9,8 @@ import subprocess
 import argparse
 from stockfish import Stockfish
 
+new_game_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+
 commentary = False
 
 def exit():
@@ -51,13 +53,18 @@ def check_single_move(old_fen, new_fen):
     return algebric notation for move if new_fen is a single move from old_fen
     '''
     if old_fen:
-        b1 = chess.Board(old_fen)
-        for move in b1.legal_moves:
-            move = move.uci()
-            b1.push_uci(move)
-            if b1.fen() == new_fen:
-                return move
-            b1.pop()
+        old_turn = get_move_frac(old_fen)
+        new_turn = get_move_frac(new_fen)
+        if new_turn - old_turn == .5:
+            b1 = chess.Board(old_fen)
+            for move in b1.legal_moves:
+                move = move.uci()
+                b1.push_uci(move)
+                if b1.fen() == new_fen:
+                    return move
+                ### pop move from stack to allow other
+                ### alternatives to be tried
+                b1.pop() 
 
 def zero():
     return 0
@@ -74,6 +81,16 @@ def get_material(fen):
         out = sum([material_values[c] for c in pieces])
     else:
         out = 0
+    return out
+
+def get_move_frac(fen):
+    if len(fen) < 5:
+        out = .5
+    else:
+        fen = fen.split()
+        color = fen[-5]
+        turn = int(fen[-1])
+        out = turn + (color == 'b') / 2
     return out
 
 def go():
@@ -122,14 +139,16 @@ def go():
         stop = __single_move[2:]
         if not commentary:
             gui.clear_arrows()
-            
+        
         gui.draw_arrow(__single_move[:2],
                        __single_move[2:],
                        color='#B0CB0260')
+    else:
+        gui.clear_arrows()
     if __current_depth < max_depth:
         __current_depth += 1
         engine.set_depth(__current_depth)
-    __after_job = r.after(1, go)
+    __after_job = r.after(100, go)
     return
 
 game = board.Board()
@@ -141,6 +160,7 @@ gui = gui_tkinter.BoardGuiTk(r, game, engine=getEngine())
 gui.pack()
 gui.draw_pieces()
 input('>>')
+
 exit()
 #r.mainloop()
 

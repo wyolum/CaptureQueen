@@ -173,9 +173,9 @@ class BoardGuiTk(tk.Frame):
             self.draw_piece(piece, row, col)
     
     def click(self, event):
-
         # Figure out which square we've clicked
-        col_size = row_size = event.widget.master.square_size
+        col_size = row_size = self.square_size
+        print(f'click({event})')
 
         current_column = event.x // col_size
         current_row = 7 - (event.y // row_size)
@@ -336,7 +336,6 @@ class BoardGuiTk(tk.Frame):
         if(filename not in self.icons):
             self.icons[filename] = ImageTk.PhotoImage(file=filename, width=32, height=32)
         self.addpiece(piecename, self.icons[filename], row, col)
-
         #self.placepiece(piecename, row, col)                    
 
     def draw_pieces(self):
