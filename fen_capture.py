@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import chess
 from board_map import fit, predict
+from pygame_render import PygameRender
 
 board_map = {}
 alg_map = {}
@@ -140,7 +141,7 @@ board = chess.Board()
 #fen = 'rnb2rk1/ppppPpp1/8/8/7p/8/PPPP1PPP/RNB1KBNR w KQ - 0 8'
 #board = chess.Board(fen)
 open('.fen', 'w').write(board.fen())
-print(board)
+#print(board)
 
 def get_occupied_squares(board):
     s = str(board).replace('\n', '').replace(' ', '')
@@ -169,7 +170,7 @@ def find_move(rect):
         imred = delta[:,:,0]
         imblue = delta[:,:,2]
         thresh = np.max(delta, axis=-1)
-        cv2.imshow('thresh', thresh)
+        #cv2.imshow('thresh', thresh)
         
         #ret,thresh = cv2.threshold(imgreen,25,255,0)
         #thresh = np.any(np.where(delta < 10, False, True), axis=2)  * 255
@@ -235,12 +236,12 @@ def find_move(rect):
             i, j = val_to_coords(alg_map[out[2 * u:2 * (u + 1)]])
             bbox = box + np.int32([(i + .5) * delta, (8 - j - .5) * delta])
             bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-        cv2.imshow("rect", rect)
+        #cv2.imshow("rect", rect)
 
         
         draw_square(thresh, out[0:2], WHITE, 1)
         draw_square(thresh, out[2:4], WHITE, 1)
-        cv2.imshow('thresh', thresh)
+        #cv2.imshow('thresh', thresh)
         
         board.push_uci(out)
         print(board.fen())
@@ -582,7 +583,15 @@ def draw_perspective(img, ids, centers):
                 board_map[id][2] = np.array([x, y])
                 cv2.circle(img, (int(x), int(y)), 10, (56, 123, 26), 4)
 
-            
+FLIP_THRESH = 750
+def check_flip():
+    balance = 0
+    for letter in 'abcdefgh':
+        for row in [1, 2]:
+            balance += np.mean(crop_square(rect, f'{letter}{row}')[0])
+            balance -= np.mean(crop_square(rect, f'{letter}{9-row}')[0])
+    return balance < FLIP_THRESH
+    
 
 def findChessboardCorners(n_ave=10):
     all_corners = []
@@ -604,9 +613,17 @@ def findChessboardCorners(n_ave=10):
     corners = np.mean(all_corners, axis=0)
     return corners
 
+def centerup():
+    while 1:
+        ret, frame = vid.read()
+        cv2.imshow('frame', frame)
+        key = cv2.waitKey(1)
+        if key & 0xFF == ord('q'):
+            break
+
 def calibrate():
     # Capture the video frame
-
+    centerup()
     corners = findChessboardCorners()
     ij = np.empty((49, 2))
     xy = np.empty((49, 2))
@@ -655,13 +672,37 @@ if False:
     print('wrote', cal_npz)
 perspective_matrix = np.load(cal_npz)['perspective_matrix']
 
+
+
 game_on = False
 __last_move = False
-while True:
+
+def get_rect():
     ret, frame = vid.read()
     rect = cv2.warpPerspective(frame, perspective_matrix,
                                (IM_HEIGHT, IM_HEIGHT),
                                flags=cv2.INTER_LINEAR)
+    return rect
+
+pgr = PygameRender(500)
+rect = get_rect()
+dark_green = '#aaaaaa'
+dark_green = '#66aa66'
+dark_red = '#bb6666'
+darker_red = "#bb8888"
+lighter_red = "#ddbbbb"
+colors = {'square dark':dark_red,
+          'square light':"#cccccc",
+          'square light lastmove':'#ddddff',
+          'square dark lastmove':"#bb88bb",
+          'margin':'#cccccc',
+          'coord':dark_red}
+          
+
+
+pgr.render(board, not check_flip(), colors=colors)
+while True:
+    rect = get_rect()
     if not game_on:
         for i in [1, 2]:
             for letter in 'abcdefgh':
@@ -670,11 +711,17 @@ while True:
                 draw_square(rect, f'{letter}{9-i}', GRAY, 2)
         bbox = get_board_bbox().astype(int)
         cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
+        cv2.imshow('rect', rect)
 
     key = chr(cv2.waitKey(1) & 0xFF)
     if key == 'q':
         break
     if key == 'x':
+        if not game_on:
+            rect = get_rect()
+            ### show the plane board
+            cv2.imshow('rect', rect)
+            
         game_on = True
         print('clock')
         for i in range(10):
@@ -690,25 +737,20 @@ while True:
         if move:
             __last_move = move
             open('.fen', 'w').write(board.fen())
-
-    if __last_move:
-        draw_square(rect, __last_move[0:2], RED, 1)
-        draw_square(rect, __last_move[2:4], RED, 1)
-    cv2.imshow('rect', rect)
+            draw_square(rect, __last_move[0:2], RED, 1)
+            draw_square(rect, __last_move[2:4], RED, 1)
+            cv2.imshow('rect', rect)
+        flipped = (side == chess.BLACK)
+        pgr.render(board, flipped, colors=colors)
     if not game_on:
-        balance = 0
-        for letter in 'abcdefgh':
-            for row in [1, 2]:
-                
-                balance += np.mean(crop_square(rect, f'{letter}{row}')[0])
-                balance -= np.mean(crop_square(rect, f'{letter}{9-row}')[0])
-        if balance > 750:
-            pass
-        else:
+        if check_flip():
             if side == chess.BLACK:
                 side = chess.WHITE
+                pgr.render(board, False, colors=colors)
             else:
                 side = chess.BLACK
+                pgr.render(board, True, colors=colors)
+                
     if False and not game_on and key == 's':
         if side == chess.WHITE:
             side = chess.BLACK
