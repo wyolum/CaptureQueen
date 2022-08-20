@@ -1,3 +1,4 @@
+raise DepracatedError("No longer used")
 from collections import defaultdict
 import chess
 import os

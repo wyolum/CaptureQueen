@@ -90,25 +90,41 @@ def get_board_bbox():
         [ 7.5,  7.5],
     ]) + 1) * delta
     return bbox
-    
-side = chess.BLACK
-def get_bbox(alg):
-    i = ord(alg[0]) - ord('a') + 1
-    j = 9 - int(alg[1])
-    if side == chess.BLACK:
-        j = 9 - j
-        i = 9 - i
+
+def get_abs_bbox(i, j):
     delta = IM_HEIGHT / 9
     coords = np.array([[-1, -1],
                        [-1,  1],
                        [ 1,  1],
                        [ 1, -1]]) / 6 + np.array([i, j])
     bbox = coords * delta
+    return bbox.astype(int)
+
+side = chess.WHITE
+def get_bbox(alg):
+    i = ord(alg[0]) - ord('a') + 1
+    j = 9 - int(alg[1])
+    if side == chess.BLACK:
+        j = 9 - j
+        i = 9 - i
+    bbox = get_abs_bbox(i, j)
     return bbox
 
-def draw_square(rect, alg, color, thickness):
-    bbox = get_bbox(alg).astype(np.int32)
+def draw_abs_square(rect, i, j, color, thickness):
+    bbox = get_abs_bbox(i, j)
     cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
+    
+def draw_square(rect, alg, color, thickness):
+    bbox = get_bbox(alg)
+    cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
+
+def crop_abs_square(rect, i, j):
+    bbox = get_abs_bbox(i, j)
+    starts = np.min(bbox, axis=0).astype(int)
+    stops = np.max(bbox, axis=0).astype(int) + 1
+    bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
+    out = rect[starts[1]:stops[1],starts[0]:stops[0]], bbox
+    return out
     
 def crop_square(rect, alg):
     bbox = get_bbox(alg)
@@ -583,7 +599,7 @@ def draw_perspective(img, ids, centers):
                 board_map[id][2] = np.array([x, y])
                 cv2.circle(img, (int(x), int(y)), 10, (56, 123, 26), 4)
 
-FLIP_THRESH = 750
+FLIP_THRESH = 250
 def check_flip():
     balance = 0
     for letter in 'abcdefgh':
@@ -591,7 +607,16 @@ def check_flip():
             balance += np.mean(crop_square(rect, f'{letter}{row}')[0])
             balance -= np.mean(crop_square(rect, f'{letter}{9-row}')[0])
     return balance < FLIP_THRESH
-    
+
+def get_side():
+    balance = 0
+    for j in [1, 2]:
+        for i in range(1, 9):
+            balance += np.mean(crop_abs_square(rect, i, j)[0])
+            balance -= np.mean(crop_abs_square(rect, i, 9-j)[0])
+            draw_abs_square(rect, i, j, RED, 5)
+            draw_abs_square(rect, i, 9-j, BLUE, 5)
+    return [chess.WHITE, chess.BLACK][balance > 0]
 
 def findChessboardCorners(n_ave=10):
     all_corners = []
@@ -684,23 +709,21 @@ def get_rect():
                                flags=cv2.INTER_LINEAR)
     return rect
 
-pgr = PygameRender(500)
+pgr = PygameRender(475)
 rect = get_rect()
 dark_green = '#aaaaaa'
 dark_green = '#66aa66'
-dark_red = '#bb6666'
-darker_red = "#bb8888"
-lighter_red = "#ddbbbb"
+dark_red = '#aa3333'
 colors = {'square dark':dark_red,
-          'square light':"#cccccc",
-          'square light lastmove':'#ddddff',
-          'square dark lastmove':"#bb88bb",
+          'square light':"#bbbbbb",
+          'square light lastmove':'#ffaaaa',
+          'square dark lastmove':"#bb6666",
           'margin':'#cccccc',
           'coord':dark_red}
           
 
-
-pgr.render(board, not check_flip(), colors=colors)
+side = get_side()
+pgr.render(board, side==chess.BLACK, colors=colors)
 while True:
     rect = get_rect()
     if not game_on:
@@ -709,10 +732,12 @@ while True:
                 color = WHITE
                 draw_square(rect, f'{letter}{i}', WHITE, 2)
                 draw_square(rect, f'{letter}{9-i}', GRAY, 2)
+
         bbox = get_board_bbox().astype(int)
         cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
         cv2.imshow('rect', rect)
 
+        
     key = chr(cv2.waitKey(1) & 0xFF)
     if key == 'q':
         break
@@ -740,22 +765,24 @@ while True:
             draw_square(rect, __last_move[0:2], RED, 1)
             draw_square(rect, __last_move[2:4], RED, 1)
             cv2.imshow('rect', rect)
-        flipped = (side == chess.BLACK)
-        pgr.render(board, flipped, colors=colors)
+        pgr.render(board, side==chess.BLACK, colors=colors)
     if not game_on:
-        if check_flip():
-            if side == chess.BLACK:
-                side = chess.WHITE
-                pgr.render(board, False, colors=colors)
-            else:
-                side = chess.BLACK
-                pgr.render(board, True, colors=colors)
+        pass
+        #print(['White', 'Black'][side == chess.BLACK])
+        #pgr.render(board, side==chess.BLACK, colors=colors)
                 
-    if False and not game_on and key == 's':
+    if not game_on and key == 's':
         if side == chess.WHITE:
             side = chess.BLACK
         else:
             side = chess.WHITE
+        pgr.render(board, side==chess.BLACK, colors=colors)
+    if game_on and key == 'r':
+        ### restart
+        print('restart')
+        board = chess.Board()
+        game_on = False
+        
     # the 'q' button is set as the
     # quitting button you may use any
     # desired button of your choice
