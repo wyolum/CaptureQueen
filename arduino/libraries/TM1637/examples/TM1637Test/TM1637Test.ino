@@ -2,8 +2,8 @@
 #include <TM1637Display.h>
 
 // Module connection pins (Digital Pins)
-#define CLK 2
-#define DIO 3
+#define CLK 5 // 2
+#define DIO 4 // 3
 
 // The amount of time (in milliseconds) between tests
 #define TEST_DELAY   2000
