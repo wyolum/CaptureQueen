@@ -1,3 +1,4 @@
+import threading
 import os.path
 import time
 import re
@@ -709,7 +710,7 @@ def get_rect():
                                flags=cv2.INTER_LINEAR)
     return rect
 
-pgr = PygameRender(475)
+pgr = PygameRender(size=475)
 rect = get_rect()
 dark_green = '#aaaaaa'
 dark_green = '#66aa66'
@@ -765,7 +766,13 @@ while True:
             draw_square(rect, __last_move[0:2], RED, 1)
             draw_square(rect, __last_move[2:4], RED, 1)
             cv2.imshow('rect', rect)
-        pgr.render(board, side==chess.BLACK, colors=colors)
+        # put render in background thread so that image-capture is not blocked
+        thread = threading.Thread(target=pgr.render,
+                                  args=(board,side==chess.BLACK),
+                                  kwargs={'colors':colors},
+                                  daemon=True)
+        thread.start()
+        #pgr.render(board, side==chess.BLACK, colors=colors)
     if not game_on:
         pass
         #print(['White', 'Black'][side == chess.BLACK])
@@ -781,6 +788,7 @@ while True:
         ### restart
         print('restart')
         board = chess.Board()
+        pgr.render(board, side==chess.BLACK, colors=colors)
         game_on = False
         
     # the 'q' button is set as the

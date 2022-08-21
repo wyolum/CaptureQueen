@@ -1,4 +1,3 @@
-raise DepracatedError("No longer used")
 from collections import defaultdict
 import chess
 import os
@@ -12,7 +11,7 @@ from stockfish import Stockfish
 
 new_game_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
-commentary = False
+commentary = True
 
 def exit():
     if __after_job:
