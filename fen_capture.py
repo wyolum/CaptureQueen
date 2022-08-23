@@ -1,12 +1,60 @@
+import sys
+import argparse
 import threading
 import os.path
 import time
 import re
 import numpy as np
 import cv2
+
 import chess
 from board_map import fit, predict
 from pygame_render import PygameRender
+from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
+
+initial_seconds = 300
+initial_increment = 0
+
+mqtt_pending_msgs = []
+def on_mqtt(msg):
+    mqtt_pending_msgs.append(msg)
+
+def mqtt_handle_events():
+    out = {}
+    while mqtt_pending_msgs:
+        msg = mqtt_pending_msgs.pop()
+        if msg.topic not in out:
+            out[msg.topic] = []
+        out[msg.topic].append(msg.payload)
+    if out:
+        print(out)
+    return out
+
+mqtt_subscribe(on_mqtt)
+mqtt_start()
+
+
+desc = 'Capture Queen: Over-the-board real-time chess capture system.'
+shortcuts = '''\
+During game play, these keys are active:
+    's' to swap colors
+    'f' to flip sides
+    'r' to reset to new game
+    'q' to quit
+    'x' to make move
+'''
+    
+parser = argparse.ArgumentParser(description=desc)
+parser.add_argument('-c','--calibrate',
+                    help='Calibrate board area',
+                    required=False, default=False)
+parser.add_argument('-s','--shortcuts',
+                    help='get gameplay command keys',
+                    action="store_true")
+args = parser.parse_args()
+if args.shortcuts:
+    print(shortcuts)
+    sys.exit()
 
 board_map = {}
 alg_map = {}
@@ -101,6 +149,12 @@ def get_abs_bbox(i, j):
     bbox = coords * delta
     return bbox.astype(int)
 
+### flip_board
+### If True, the right side of board from camera view point is toward the
+### bottom of the board.
+### If False, the left side of the board is toward the bottom
+
+flip_board = False 
 side = chess.WHITE
 def get_bbox(alg):
     i = ord(alg[0]) - ord('a') + 1
@@ -187,7 +241,6 @@ def find_move(rect):
         imred = delta[:,:,0]
         imblue = delta[:,:,2]
         thresh = np.max(delta, axis=-1)
-        #cv2.imshow('thresh', thresh)
         
         #ret,thresh = cv2.threshold(imgreen,25,255,0)
         #thresh = np.any(np.where(delta < 10, False, True), axis=2)  * 255
@@ -253,12 +306,10 @@ def find_move(rect):
             i, j = val_to_coords(alg_map[out[2 * u:2 * (u + 1)]])
             bbox = box + np.int32([(i + .5) * delta, (8 - j - .5) * delta])
             bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-        #cv2.imshow("rect", rect)
 
         
         draw_square(thresh, out[0:2], WHITE, 1)
         draw_square(thresh, out[2:4], WHITE, 1)
-        #cv2.imshow('thresh', thresh)
         
         board.push_uci(out)
         print(board.fen())
@@ -617,7 +668,11 @@ def get_side():
             balance -= np.mean(crop_abs_square(rect, i, 9-j)[0])
             draw_abs_square(rect, i, j, RED, 5)
             draw_abs_square(rect, i, 9-j, BLUE, 5)
-    return [chess.WHITE, chess.BLACK][balance > 0]
+    if balance > 0:
+        out = chess.BLACK
+    else:
+        out = chess.WHITE
+    return out
 
 def findChessboardCorners(n_ave=10):
     all_corners = []
@@ -640,6 +695,7 @@ def findChessboardCorners(n_ave=10):
     return corners
 
 def centerup():
+    print("Center board in field of view.  Press 'q' to continue.")
     while 1:
         ret, frame = vid.read()
         cv2.imshow('frame', frame)
@@ -692,10 +748,14 @@ def calibrate():
     return M, coeff
 
 cal_npz = 'perspective_matrix.npz'
-if False:
+if args.calibrate:
+    print('Calibrate')
     perspective_matrix, ij_coeff = calibrate()
     np.savez(cal_npz, perspective_matrix=perspective_matrix)
     print('wrote', cal_npz)
+else:
+    print("Skipping calibration")
+
 perspective_matrix = np.load(cal_npz)['perspective_matrix']
 
 
@@ -711,6 +771,14 @@ def get_rect():
     return rect
 
 pgr = PygameRender(size=475)
+
+def render(renderer, board, side, colors):
+    thread = threading.Thread(target=renderer.render,
+                              args=(board,side==chess.BLACK and not flip_board),
+                              kwargs={'colors':colors},
+                              daemon=True)
+    thread.start()
+
 rect = get_rect()
 dark_green = '#aaaaaa'
 dark_green = '#66aa66'
@@ -723,9 +791,28 @@ colors = {'square dark':dark_red,
           'coord':dark_red}
           
 
+def update_camera_view(rect):
+    if flip_board:
+        view = rect[::-1, ::-1]
+    else:
+        view = rect
+    cv2.imshow('view', view)
+    
 side = get_side()
-pgr.render(board, side==chess.BLACK, colors=colors)
+render(pgr, board, side==chess.BLACK, colors=colors)
+
+mqtt_clock_reset(initial_seconds, initial_increment)
+
 while True:
+    key = chr(cv2.waitKey(1) & 0xFF)
+    mqtt_events = mqtt_handle_events()
+    clock_hit = False
+    if 'capture_queen.turn' in mqtt_events:
+        ### TODO: handle more than one event
+        turn = int(mqtt_events['capture_queen.turn'][0])
+        if turn == 3: ### pre-game
+            key = 'r'
+        clock_hit = turn < 2
     rect = get_rect()
     if not game_on:
         for i in [1, 2]:
@@ -736,18 +823,15 @@ while True:
 
         bbox = get_board_bbox().astype(int)
         cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
-        cv2.imshow('rect', rect)
-
-        
-    key = chr(cv2.waitKey(1) & 0xFF)
+        update_camera_view(rect)
     if key == 'q':
         break
-    if key == 'x':
+    if key == 'x' or clock_hit:
         if not game_on:
             rect = get_rect()
             ### show the plane board
-            cv2.imshow('rect', rect)
-            
+            update_camera_view(rect)
+                        
         game_on = True
         print('clock')
         for i in range(10):
@@ -765,30 +849,31 @@ while True:
             open('.fen', 'w').write(board.fen())
             draw_square(rect, __last_move[0:2], RED, 1)
             draw_square(rect, __last_move[2:4], RED, 1)
-            cv2.imshow('rect', rect)
+            update_camera_view(rect)
+
         # put render in background thread so that image-capture is not blocked
-        thread = threading.Thread(target=pgr.render,
-                                  args=(board,side==chess.BLACK),
-                                  kwargs={'colors':colors},
-                                  daemon=True)
-        thread.start()
-        #pgr.render(board, side==chess.BLACK, colors=colors)
+        render(pgr, board, side, colors)
+        
     if not game_on:
         pass
         #print(['White', 'Black'][side == chess.BLACK])
-        #pgr.render(board, side==chess.BLACK, colors=colors)
                 
     if not game_on and key == 's':
         if side == chess.WHITE:
             side = chess.BLACK
         else:
             side = chess.WHITE
-        pgr.render(board, side==chess.BLACK, colors=colors)
+        render(pgr, board, side, colors)
+    if key == 'f':
+        flip_board = not flip_board
+        update_camera_view(rect)
+        render(pgr, board, side, colors)
+        
     if game_on and key == 'r':
         ### restart
         print('restart')
         board = chess.Board()
-        pgr.render(board, side==chess.BLACK, colors=colors)
+        render(pgr, board, side, colors)        
         game_on = False
         
     # the 'q' button is set as the
