@@ -25,9 +25,9 @@
      showgrid="false"
      units="in"
      inkscape:snap-global="false"
-     inkscape:zoom="0.26932851"
-     inkscape:cx="-443.06866"
-     inkscape:cy="1231.9086"
+     inkscape:zoom="0.84986109"
+     inkscape:cx="578.41477"
+     inkscape:cy="550.43432"
      inkscape:window-width="1440"
      inkscape:window-height="900"
      inkscape:window-x="0"
@@ -266,6 +266,37 @@
          id="circle3202"
          cx="41.045795"
          cy="308.93066"
+         r="0.98901099" />
+    </g>
+    <g
+       id="g3610">
+      <circle
+         style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
+         id="circle3518"
+         cx="41.045795"
+         cy="147.56979"
+         r="0.98901099" />
+      <circle
+         style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
+         id="circle3606"
+         cx="41.045795"
+         cy="182.38263"
+         r="0.98901099" />
+    </g>
+    <g
+       id="g3616"
+       transform="translate(160.25343)">
+      <circle
+         style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
+         id="circle3612"
+         cx="41.045795"
+         cy="147.56979"
+         r="0.98901099" />
+      <circle
+         style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
+         id="circle3614"
+         cx="41.045795"
+         cy="182.38263"
          r="0.98901099" />
     </g>
   </g>
