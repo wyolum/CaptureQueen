@@ -44,6 +44,9 @@ subscribers = []
 def mqtt_subscribe(callback):
     subscribers.append(callback)
 
+def mqtt_publish_fen(fen):
+    publish.single(group + '.fen', fen, hostname="localhost")
+    
 def mqtt_clock_reset(initial, increment):
     publish.single(group + '.initial_seconds', initial,
                    hostname="localhost")

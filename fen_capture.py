@@ -11,6 +11,7 @@ import chess
 from board_map import fit, predict
 from pygame_render import PygameRender
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
+from mqtt_clock_client import mqtt_publish_fen
 
 initial_seconds = 300
 initial_increment = 0
@@ -846,7 +847,9 @@ while True:
         move = find_move(rect)
         if move:
             __last_move = move
-            open('.fen', 'w').write(board.fen())
+            fen = board.fen()
+            open('.fen', 'w').write(fen)
+            mqtt_publish_fen(fen)
             draw_square(rect, __last_move[0:2], RED, 1)
             draw_square(rect, __last_move[2:4], RED, 1)
             update_camera_view(rect)
@@ -872,6 +875,7 @@ while True:
     if game_on and key == 'r':
         ### restart
         print('restart')
+        mqtt_clock_reset(initial_seconds, initial_increment)        
         board = chess.Board()
         render(pgr, board, side, colors)        
         game_on = False
