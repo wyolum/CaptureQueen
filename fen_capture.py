@@ -10,6 +10,7 @@ import cv2
 import chess
 from board_map import fit, predict
 from pygame_render import PygameRender
+import pgn_upload
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer
 
@@ -43,6 +44,7 @@ During game play, these keys are active:
     'r' to reset to new game
     'q' to quit
     'x' to make move
+    'u' to upload to lichess
 '''
     
 parser = argparse.ArgumentParser(description=desc)
@@ -88,48 +90,6 @@ for row in range(8):
         order.append((alg, ii))
         # print(alg, ii)
         ii += 1
-
-def findArucoMarkers(img, draw=False):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    bboxs, ids, rejected = aruco.detectMarkers(gray, arucoDict,
-                                               parameters = arucoParam)
-    _bboxs, _ids, _rejected = aruco.detectMarkers(255-gray, arucoDict,
-                                                  parameters = arucoParam)
-    if draw:
-        cv2.aruco.drawDetectedMarkers(img, bboxs)
-        cv2.aruco.drawDetectedMarkers(img, _bboxs)
-
-    out_bboxs = []
-    out_ids = []
-    if ids is not None:
-        out_ids.extend(ids)
-        out_bboxs.extend(bboxs)
-    if _ids is not None:
-        out_ids.extend(_ids)
-        out_bboxs.extend(_bboxs)
-
-    #out = np.array(out).ravel()
-    out_ids = np.array(out_ids).ravel()
-    for id, bbox in zip(out_ids, out_bboxs):
-        if 0 <= id and id < 64:
-            last_pos = board_map[id][2]
-            pos = np.mean(bbox[0], axis=0)
-            if last_pos is not None:
-                d = np.linalg.norm(last_pos - pos)
-                if d > 10: ### board moved! clear out last known positions
-                    print(id, 'board moved!')
-                    for i in board_map:
-                        board_map[i][1] = None
-                        board_map[i][2] = None
-            board_map[id][1] = bbox[0]
-            board_map[id][2] = pos
-                    
-    return out_bboxs, out_ids
-        
-def alg_dist(alg0, alg1):
-    dx = ord(alg0[0]) - ord(alg1[0])
-    dy = ord(alg0[1]) - ord(alg1[1])
-    return np.sqrt(dx ** 2 + dy ** 2), dx, dy
 
 def get_board_bbox():
     delta = IM_HEIGHT / 9
@@ -814,10 +774,30 @@ render(renderers, None, side==chess.BLACK, colors=colors)
 
 mqtt_clock_reset(initial_seconds, initial_increment)
 
+old_board = chess.Board()
+
 while True:
     key = chr(cv2.waitKey(1) & 0xFF)
     mqtt_events = mqtt_handle_events()
     clock_hit = False
+    # print(key)
+    if key == 'Q':
+        game_on = False
+        old_board = board
+        board = chess.Board()
+        for move in old_board.move_stack[:-1]:
+            board.push(move)
+        render(renderers, board, side, colors)
+        print('go back')
+    if key == 'S':
+        if not game_on:
+            n = len(board.move_stack)
+            if len(old_board.move_stack) > n:
+                board.push(old_board.move_stack[n])
+            render(renderers, board, side, colors)
+            print('go forward')
+    if key == 'u':
+        pgn_upload.upload_to_lichess(board)
     if 'capture_queen.turn' in mqtt_events:
         ### TODO: handle more than one event
         turn = int(mqtt_events['capture_queen.turn'][0])
@@ -838,11 +818,12 @@ while True:
     if key == 'q':
         break
     if key == 'x' or clock_hit:
+        print(board)
         if not game_on:
             rect = get_rect()
             ### show the plane board
+            last_rect = rect.copy()
             update_camera_view(rect)
-                        
         game_on = True
         print('clock')
         for i in range(10):

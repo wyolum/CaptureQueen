@@ -65,7 +65,6 @@ class PygameRender:
             pygame.draw.rect(self.screen, (255, 128, 128), to_square,
                              width)
             pygame.display.flip()
-            print('flipped')
         else:
             lastmove = None
         if colors is None:
