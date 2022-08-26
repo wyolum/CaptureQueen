@@ -29,6 +29,14 @@ WiFiManager wifiManager;
 WiFiClient espClient;
 PubSubClient mqtt_client(espClient);
 
+bool bytes2bool(byte* payload, unsigned int length){
+  bool out = false;
+  if(length > 0){
+    out = (char)payload[0] == 't';
+  }
+  return out;
+}
+
 int bytes2int(byte* payload, unsigned int length){
   char str_payload[length + 1];
   for (int i = 0; i < length; i++) {
@@ -66,7 +74,7 @@ void set_increment_cb(byte *payload, unsigned int length){
   increment_seconds = bytes2int(payload, length);
 }
 TopicListener reset_listener = {"capture_queen.reset", reset_cb};
-TopicListener pause_listener = {"capture_queen.pause", pause_cb};
+TopicListener pause_listener = {"capture_queen.paused", pause_cb};
 TopicListener setturn_listener = {"capture_queen.setturn", setturn_cb};
 TopicListener increment_listener = {"capture_queen.increment_seconds", set_increment_cb};
 TopicListener initial_seconds_listener = {"capture_queen.initial_seconds", set_initial_seconds_cb};
@@ -114,9 +122,11 @@ void publish_int(char* topic, int val){
 }
 
 void mqtt_publish_state(){
-  publish_int("capture_queen.turn",  players[turn]);
+  if(!paused){
+    publish_int("capture_queen.turn",  players[turn]);
+  }
   publish_int("capture_queen.white_ms",  counter_ms[players[WHITE]]);
-  publish_int("capture_queen.black_ms",  counter_ms[players[BLACK]]); 
+  publish_int("capture_queen.black_ms",  counter_ms[players[BLACK]]);
 }
 void mqtt_connect(){
   String str;
@@ -283,6 +293,7 @@ void new_game(){
   display1.clear();
   delay(100);
   mqtt_publish_state();
+  publish_int("capture_queen.reset_pi",  3);
 }
 
 void game_over(int player){
