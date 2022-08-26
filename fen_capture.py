@@ -785,9 +785,10 @@ class Renderers:
         for renderer in self.renderers:
             renderer.render(board, side, colors=colors)
 
-pgr = PygameRender(size=475)
 mqttr = MqttRenderer
+pgr = PygameRender(size=475)
 renderers = Renderers([pgr, mqttr])
+#renderers = Renderers([mqttr])
 
 rect = get_rect()
 dark_green = '#aaaaaa'
@@ -809,7 +810,7 @@ def update_camera_view(rect):
     cv2.imshow('view', view)
     
 side = get_side()
-render(renderers, board, side==chess.BLACK, colors=colors)
+render(renderers, None, side==chess.BLACK, colors=colors)
 
 mqtt_clock_reset(initial_seconds, initial_increment)
 
@@ -885,7 +886,7 @@ while True:
         print('restart')
         # mqtt_clock_reset(initial_seconds, initial_increment)        
         board = chess.Board()
-        render(renderers, board, side, colors)        
+        render(renderers, None, side, colors)        
         game_on = False
         
     # the 'q' button is set as the

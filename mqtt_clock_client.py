@@ -1,3 +1,4 @@
+import chess
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 
@@ -60,6 +61,8 @@ class MqttRenderer:
         '''
         Colors not used
         '''
+        if board is None:
+            board = chess.Board()
         fen = board.fen()
         if len(board.move_stack) > 0:
             lastmove_uci = board.move_stack[-1].uci()
