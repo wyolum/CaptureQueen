@@ -11,7 +11,7 @@ import chess
 from board_map import fit, predict
 from pygame_render import PygameRender
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
-from mqtt_clock_client import mqtt_publish_fen
+from mqtt_clock_client import MqttRenderer
 
 initial_seconds = 300
 initial_increment = 0
@@ -771,14 +771,23 @@ def get_rect():
                                flags=cv2.INTER_LINEAR)
     return rect
 
-pgr = PygameRender(size=475)
-
 def render(renderer, board, side, colors):
     thread = threading.Thread(target=renderer.render,
                               args=(board,side==chess.BLACK and not flip_board),
                               kwargs={'colors':colors},
                               daemon=True)
     thread.start()
+
+class Renderers:
+    def __init__(self, render_list):
+        self.renderers = render_list
+    def render(self, board, side, colors):
+        for renderer in self.renderers:
+            renderer.render(board, side, colors=colors)
+
+pgr = PygameRender(size=475)
+mqttr = MqttRenderer
+renderers = Renderers([pgr, mqttr])
 
 rect = get_rect()
 dark_green = '#aaaaaa'
@@ -800,7 +809,7 @@ def update_camera_view(rect):
     cv2.imshow('view', view)
     
 side = get_side()
-render(pgr, board, side==chess.BLACK, colors=colors)
+render(renderers, board, side==chess.BLACK, colors=colors)
 
 mqtt_clock_reset(initial_seconds, initial_increment)
 
@@ -849,13 +858,12 @@ while True:
             __last_move = move
             fen = board.fen()
             open('.fen', 'w').write(fen)
-            mqtt_publish_fen(fen)
             draw_square(rect, __last_move[0:2], RED, 1)
             draw_square(rect, __last_move[2:4], RED, 1)
             update_camera_view(rect)
 
         # put render in background thread so that image-capture is not blocked
-        render(pgr, board, side, colors)
+        render(renderers, board, side, colors)
         
     if not game_on:
         pass
@@ -866,18 +874,18 @@ while True:
             side = chess.BLACK
         else:
             side = chess.WHITE
-        render(pgr, board, side, colors)
+        render(renderers, board, side, colors)
     if key == 'f':
         flip_board = not flip_board
         update_camera_view(rect)
-        render(pgr, board, side, colors)
+        render(renderers, board, side, colors)
         
     if game_on and key == 'r':
         ### restart
         print('restart')
-        mqtt_clock_reset(initial_seconds, initial_increment)        
+        # mqtt_clock_reset(initial_seconds, initial_increment)        
         board = chess.Board()
-        render(pgr, board, side, colors)        
+        render(renderers, board, side, colors)        
         game_on = False
         
     # the 'q' button is set as the
