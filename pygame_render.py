@@ -33,7 +33,7 @@ class PygameRender:
         if colors is None:
             colors = {'square dark':"#aaaaaa",
                       'square light':"#ffffff"}
-
+        print('pygame_render.colors::', colors)
         svg = chess.svg.board(board,size=self.size, flipped=flipped,
                               lastmove=lastmove, colors=colors)
         #open("junk.svg", 'w').write(svg);print("wrote junk.svg");return

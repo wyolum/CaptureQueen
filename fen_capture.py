@@ -12,7 +12,7 @@ from board_map import fit, predict
 from pygame_render import PygameRender
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import mqtt_publish_fen
-
+import defaults
 initial_seconds = 300
 initial_increment = 0
 
@@ -781,16 +781,7 @@ def render(renderer, board, side, colors):
     thread.start()
 
 rect = get_rect()
-dark_green = '#aaaaaa'
-dark_green = '#66aa66'
-dark_red = '#aa3333'
-colors = {'square dark':dark_red,
-          'square light':"#bbbbbb",
-          'square light lastmove':'#ffaaaa',
-          'square dark lastmove':"#bb6666",
-          'margin':'#cccccc',
-          'coord':dark_red}
-          
+colors = defaults.colors          
 
 def update_camera_view(rect):
     if flip_board:
