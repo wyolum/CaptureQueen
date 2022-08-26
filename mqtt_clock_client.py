@@ -1,3 +1,4 @@
+import chess
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 
@@ -44,13 +45,28 @@ subscribers = []
 def mqtt_subscribe(callback):
     subscribers.append(callback)
 
-def mqtt_publish_fen(fen):
-    publish.single(group + '.fen', fen, hostname="localhost")
-    
+def mqtt_publish_position(fen, lastmove_uci=None):
+    payload = f'{lastmove_uci}//{fen}'
+    publish.single(group + '.position', payload, hostname="localhost")
+        
 def mqtt_clock_reset(initial, increment):
     publish.single(group + '.initial_seconds', initial,
                    hostname="localhost")
     publish.single(group + '.increment_seconds', increment,
                    hostname="localhost")
     publish.single(group + '.reset', 1, hostname="localhost")
+    
+class MqttRenderer:
+    def render(board, side, colors=None):
+        '''
+        Colors not used
+        '''
+        if board is None:
+            board = chess.Board()
+        fen = board.fen()
+        if len(board.move_stack) > 0:
+            lastmove_uci = board.move_stack[-1].uci()
+        else:
+            lastmove_uci = None
+        mqtt_publish_position(fen, lastmove_uci)
     
