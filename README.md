@@ -76,6 +76,9 @@ Power the clock and wait for LEDs to display.
    <IMG>
 1. hit the 'r' key to reset the board and start a new game.
 
+1. (Optional) On laptop, kick-off the mqtt_board_client.py with the ip 
+  address of the mosquitto server. Open(.board.svg) in eog (eye of gnome) to 
+  see current images of the game in progress.
 
 # Resources
 https://www.raspberrypi.com/products/raspberry-pi-4-model-b/
