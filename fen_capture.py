@@ -853,7 +853,7 @@ while True:
                 old_board = clock_board.copy()
                 print('going back...total moves available:',
                       len(old_board.move_stack))
-            clock_board.pop()
+            print('pop():', clock_board.pop())
 
         render(renderers, clock_board, side, colors)
         move_number = len(clock_board.move_stack)
