@@ -1,3 +1,4 @@
+import copy
 import sys
 import argparse
 import threading
@@ -6,6 +7,7 @@ import time
 import re
 import numpy as np
 import cv2
+import glob
 
 import chess
 from board_map import fit, predict
@@ -13,6 +15,65 @@ from pygame_render import PygameRender
 import pgn_upload
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
+
+class ClockMove:
+    def __init__(self, move, white_ms, black_ms):
+        self.move = move
+        self.white_ms = white_ms
+        self.black_ms = black_ms
+    def __str__(self):
+        return f'{self.uci()}/{self.white_ms}/{self.black_ms}'
+    def uci(self):
+        return self.move.uci()
+    
+class ClockBoard:
+    def __init__(self):
+        self.board = chess.Board()
+        self.move_stack = []
+    def __repr__(self):
+        return self.fen()
+    def __str__(self):
+        if len(self.move_stack) > 0:
+            out = f'{str(self.board)}\n{self.move_stack[-1]}'
+        else:
+            out = f'{str(self.board)}\n-/{initial_seconds * 1000}/{initial_seconds*1000}'
+        return out
+    
+    def fen(self):
+        return self.board.fen()
+    
+    def push(self, clock_move):
+        self.move_stack.append(clock_move)
+        return self.board.push(clock_move.move)
+
+    def push_uci(self, uci, white_ms, black_ms):
+        move = chess.Move.from_uci(uci)
+        clock_move = ClockMove(move, white_ms, black_ms)
+        self.push(clock_move)
+
+    def pop(self):
+        self.board.pop() ### keep in sync
+        return self.move_stack.pop()
+    
+    @property
+    def legal_moves(self):
+        return self.board.legal_moves
+    
+    def is_castling(self, move):
+        return self.board.is_castling(move)
+    
+    def is_en_passant(self, move):
+        return self.board.is_en_passant(move)
+
+    def copy(self):
+        out = ClockBoard()
+        out.board = self.board.copy()
+        out.move_stack = copy.copy(self.move_stack)
+        return out
+
+for file in glob.glob('captures/*.png'):
+    os.remove(file)
+game_id = 0
 
 initial_seconds = 300
 initial_increment = 0
@@ -163,22 +224,9 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0 ,0)
 GRAY = (128, 128, 128)
 
-board = chess.Board()
-#fen = open('.fen').read().strip()
-## castle test
-#fen = 'rnbqk2r/pppp1ppp/5n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'
-## en passant test
-#fen = 'rnbqkbnr/ppppp1p1/8/4Pp1p/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3'
-## promotion test
-#fen = 'rnb2rk1/ppppPpp1/8/8/7p/8/PPPP1PPP/RNB1KBNR w KQ - 0 8'
-#board = chess.Board(fen)
-open('.fen', 'w').write(board.fen())
+clock_board = ClockBoard()
 
-def get_occupied_squares(board):
-    s = str(board).replace('\n', '').replace(' ', '')
-    p_x = re.compile('[rpnbqkRPNBQK]')
-    s = re.sub('[rpnbqkRPNBQK]', 'X', s)
-    return s
+open('.fen', 'w').write(clock_board.fen())
 
 def average_square(data):
     h, w, d = data.shape
@@ -214,7 +262,7 @@ def find_move(rect):
         return
 
     candidates = []
-    for move in board.legal_moves:
+    for move in clock_board.legal_moves:
         ## only allow queen promotion at this time
         if move.promotion and move.promotion != chess.QUEEN:
             continue
@@ -222,7 +270,7 @@ def find_move(rect):
         sq0, bbox0 = crop_square(thresh, uci[:2])
         sq1, bbox1 = crop_square(thresh, uci[2:4])
         sqs = [sq0, sq1]
-        if board.is_castling(move):
+        if clock_board.is_castling(move):
             if uci[2] == 'g': ## kingside
                 row = uci[3]
                 sq2, bbox2 = crop_square(thresh, f'h{row}')
@@ -233,7 +281,7 @@ def find_move(rect):
                 sq2, bbox2 = crop_square(thresh, f'a{row}')
                 sq3, bbox3 = crop_square(thresh, f'd{row}')
                 sqs.extend([sq2, sq3])
-        if board.is_en_passant(move):
+        if clock_board.is_en_passant(move):
             col = uci[2]
             row = uci[1]
             sq2, bbox2 = crop_square(thresh, f'{col}{row}')
@@ -244,8 +292,8 @@ def find_move(rect):
         change_thresh = 5000
         change_count = np.sum(change > change_thresh)
         #print(uci, move.from_square, move.to_square, move.promotion,
-        #      board.is_en_passant(move),
-        #      board.is_castling(move), change_count)
+        #      clock_board.is_en_passant(move),
+        #      clock_board.is_castling(move), change_count)
         if change_count == len(change):
             candidates.append([move, change_count, total_change])
     if len(candidates) == 0:
@@ -271,9 +319,9 @@ def find_move(rect):
         draw_square(thresh, out[0:2], WHITE, 1)
         draw_square(thresh, out[2:4], WHITE, 1)
         
-        board.push_uci(out)
-        print(board.fen())
-        print(board.fen(), file=open(".fen", 'w'), flush=True)
+        clock_board.push_uci(out, white_ms, black_ms)
+        print(clock_board.fen())
+        print(clock_board.fen(), file=open(".fen", 'w'), flush=True)
         
         
     return out
@@ -290,7 +338,7 @@ IM_HEIGHT = 480
 vid.set(cv2.CAP_PROP_FRAME_WIDTH, IM_WIDTH)
 vid.set(cv2.CAP_PROP_FRAME_HEIGHT, IM_HEIGHT)
 
-move_number = 1
+move_number = 0
 
 DEG = np.pi / 180
 grid_guess = [-27214, -3834, 43305, 2.2340, 0.8692, -1.0829]
@@ -745,9 +793,9 @@ class Renderers:
             renderer.render(board, side, colors=colors)
 
 mqttr = MqttRenderer
-pgr = PygameRender(size=475)
-renderers = Renderers([pgr, mqttr])
-#renderers = Renderers([mqttr])
+#pgr = PygameRender(size=475)
+#renderers = Renderers([pgr, mqttr])
+renderers = Renderers([mqttr])
 
 rect = get_rect()
 dark_green = '#aaaaaa'
@@ -775,6 +823,23 @@ mqtt_clock_reset(initial_seconds, initial_increment)
 
 old_board = None
 
+def get_position_image_filename(game_id, move_numner):
+    return f'captures/{game_id:04d}_{move_number:04d}.png'
+def write_position_image(rect, game_id, move_number):
+    print('write', game_id, move_number)
+    png = get_position_image_filename(game_id, move_number)
+    cv2.imwrite(png, rect)    
+def read_position_image(game_id, move_number):
+    png = get_position_image_filename(game_id, move_number)
+    if os.path.exists(png):
+        print('read', game_id, move_number, png)
+        out = cv2.imread(png)
+    else:
+        print('XXXX', game_id, move_number, png)
+        out = None
+    return out
+
+
 while True:
     key = chr(cv2.waitKey(1) & 0xFF)
     mqtt_events = mqtt_handle_events()
@@ -783,29 +848,40 @@ while True:
     if key == 'Q':
         game_on = False
         mqtt_clock_pause(True)
-        if old_board is None:
-            old_board = board
-            old_board.move_cursor = len(old_board.move_stack) - 1
-        board = chess.Board()
-        for move in old_board.move_stack[:old_board.move_cursor]:
-            board.push(move)
-        old_board.move_cursor -= 1
-        render(renderers, board, side, colors)
-        print('go back')
+        if len(clock_board.move_stack) > 0:
+            if old_board is None:
+                old_board = clock_board.copy()
+                print('going back...total moves available:',
+                      len(old_board.move_stack))
+            clock_board.pop()
+
+        render(renderers, clock_board, side, colors)
+        move_number = len(clock_board.move_stack)
+        print('go back', move_number)
+
+        im = read_position_image(game_id, len(clock_board.move_stack))
+        if im is not None:
+            cv2.imshow("Previous Move", im)
     if key == 'S':
-        if not game_on:
-            n = len(board.move_stack)
-            if len(old_board.move_stack) > n:
-                board.push(old_board.move_stack[n])
-                old_board.move_cursor += 1
+        if not game_on and old_board is not None:
+            n = len(clock_board.move_stack)
+            m = len(old_board.move_stack)
+            print(m, n)
+            if  m > n:
+                clock_board.push(old_board.move_stack[n])
+                move_number = n + 1
+                im = read_position_image(game_id, move_number)
+                if im is not None:
+                    cv2.imshow("Previous Move", im)
                 
-            render(renderers, board, side, colors)
+            render(renderers, clock_board, side, colors)
             print('go forward')
     if key == 'u':
-        pgn_upload.upload_to_lichess(board)
+        pgn_upload.upload_to_lichess(clock_board)
     if 'capture_queen.turn' in mqtt_events:
         ### TODO: handle more than one event
-        turn = int(mqtt_events['capture_queen.turn'][0])
+        turn_msg = str(mqtt_events['capture_queen.turn'][0])[2:-1]
+        turn, white_ms, black_ms = map(int, turn_msg.split('//'))
         clock_hit = True
         old_board = None
     rect = get_rect()
@@ -828,26 +904,27 @@ while True:
             last_rect = rect.copy()
             update_camera_view(rect)
         game_on = True
-        for i in range(10):
+        for i in range(1):
             ret, frame = vid.read() ## clear buffer
             
-        png = f'captures/{move_number:04d}.png'
-        move_number += 1
+        png = f'captures/{game_id:04d}_{move_number:04d}.png'
         rect = cv2.warpPerspective(frame, perspective_matrix,
                                    (IM_HEIGHT, IM_HEIGHT),
                                    flags=cv2.INTER_LINEAR)
-        cv2.imwrite(png, rect)
         move = find_move(rect)
+        move_number = len(clock_board.move_stack)
+        write_position_image(rect, game_id, move_number)
+
         if move:
             __last_move = move
-            fen = board.fen()
+            fen = clock_board.fen()
             open('.fen', 'w').write(fen)
             draw_square(rect, __last_move[0:2], RED, 1)
             draw_square(rect, __last_move[2:4], RED, 1)
             update_camera_view(rect)
 
         # put render in background thread so that image-capture is not blocked
-        render(renderers, board, side, colors)
+        render(renderers, clock_board, side, colors)
         
     if not game_on:
         pass
@@ -858,21 +935,22 @@ while True:
             side = chess.BLACK
         else:
             side = chess.WHITE
-        render(renderers, board, side, colors)
+        render(renderers, ckock_board, side, colors)
     if key == 'f':
         flip_board = not flip_board
         update_camera_view(rect)
-        render(renderers, board, side, colors)
+        render(renderers, clock_board, side, colors)
     if 'capture_queen.reset_pi' in mqtt_events:
         print('restart')
-        board = chess.Board()
+        clock_board = ClockBoard()
         render(renderers, None, side, colors)        
         game_on = False
         
     if game_on and key == 'r':
         ### restart
         print('restart')
-        board = chess.Board()
+        game_id += 1
+        clock_board = ClockBoard()
         mqtt_clock_reset(initial_seconds, initial_increment)
         render(renderers, None, side, colors)        
         game_on = False

@@ -11,8 +11,6 @@ def on_connect(client, userdata, flags, rc):
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe("capture_queen.turn")
-    client.subscribe("capture_queen.white_ms")
-    client.subscribe("capture_queen.black_ms")
     client.subscribe("capture_queen.reset_pi")
     #publish.single(group + '.initial', "300", hostname="localhost")
     #publish.single(group + '.increment', "3", hostname="localhost")
