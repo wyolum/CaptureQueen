@@ -12,7 +12,7 @@ from board_map import fit, predict
 from pygame_render import PygameRender
 import pgn_upload
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
-from mqtt_clock_client import MqttRenderer
+from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
 
 initial_seconds = 300
 initial_increment = 0
@@ -173,7 +173,6 @@ board = chess.Board()
 #fen = 'rnb2rk1/ppppPpp1/8/8/7p/8/PPPP1PPP/RNB1KBNR w KQ - 0 8'
 #board = chess.Board(fen)
 open('.fen', 'w').write(board.fen())
-#print(board)
 
 def get_occupied_squares(board):
     s = str(board).replace('\n', '').replace(' ', '')
@@ -774,7 +773,7 @@ render(renderers, None, side==chess.BLACK, colors=colors)
 
 mqtt_clock_reset(initial_seconds, initial_increment)
 
-old_board = chess.Board()
+old_board = None
 
 while True:
     key = chr(cv2.waitKey(1) & 0xFF)
@@ -783,10 +782,14 @@ while True:
     # print(key)
     if key == 'Q':
         game_on = False
-        old_board = board
+        mqtt_clock_pause(True)
+        if old_board is None:
+            old_board = board
+            old_board.move_cursor = len(old_board.move_stack) - 1
         board = chess.Board()
-        for move in old_board.move_stack[:-1]:
+        for move in old_board.move_stack[:old_board.move_cursor]:
             board.push(move)
+        old_board.move_cursor -= 1
         render(renderers, board, side, colors)
         print('go back')
     if key == 'S':
@@ -794,6 +797,8 @@ while True:
             n = len(board.move_stack)
             if len(old_board.move_stack) > n:
                 board.push(old_board.move_stack[n])
+                old_board.move_cursor += 1
+                
             render(renderers, board, side, colors)
             print('go forward')
     if key == 'u':
@@ -801,9 +806,8 @@ while True:
     if 'capture_queen.turn' in mqtt_events:
         ### TODO: handle more than one event
         turn = int(mqtt_events['capture_queen.turn'][0])
-        if turn == 3: ### pre-game
-            key = 'r'
-        clock_hit = turn < 2
+        clock_hit = True
+        old_board = None
     rect = get_rect()
     if not game_on:
         for i in [1, 2]:
@@ -818,14 +822,12 @@ while True:
     if key == 'q':
         break
     if key == 'x' or clock_hit:
-        print(board)
         if not game_on:
             rect = get_rect()
             ### show the plane board
             last_rect = rect.copy()
             update_camera_view(rect)
         game_on = True
-        print('clock')
         for i in range(10):
             ret, frame = vid.read() ## clear buffer
             
@@ -861,12 +863,17 @@ while True:
         flip_board = not flip_board
         update_camera_view(rect)
         render(renderers, board, side, colors)
+    if 'capture_queen.reset_pi' in mqtt_events:
+        print('restart')
+        board = chess.Board()
+        render(renderers, None, side, colors)        
+        game_on = False
         
     if game_on and key == 'r':
         ### restart
         print('restart')
-        # mqtt_clock_reset(initial_seconds, initial_increment)        
         board = chess.Board()
+        mqtt_clock_reset(initial_seconds, initial_increment)
         render(renderers, None, side, colors)        
         game_on = False
         

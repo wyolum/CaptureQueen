@@ -13,9 +13,7 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe("capture_queen.turn")
     client.subscribe("capture_queen.white_ms")
     client.subscribe("capture_queen.black_ms")
-    client.subscribe("capture_queen.initial_seconds")
-    client.subscribe("capture_queen.increment_seconds")
-    client.subscribe("capture_queen.reset")
+    client.subscribe("capture_queen.reset_pi")
     #publish.single(group + '.initial', "300", hostname="localhost")
     #publish.single(group + '.increment', "3", hostname="localhost")
     #publish.single(group + '.reset', "1", hostname="localhost")
@@ -48,13 +46,20 @@ def mqtt_subscribe(callback):
 def mqtt_publish_position(fen, lastmove_uci=None):
     payload = f'{lastmove_uci}//{fen}'
     publish.single(group + '.position', payload, hostname="localhost")
-        
+
+
+def mqtt_clock_pause(paused):
+    paused = int(paused)
+    publish.single(group + '.paused', paused,
+                   hostname="localhost")
+    
 def mqtt_clock_reset(initial, increment):
     publish.single(group + '.initial_seconds', initial,
                    hostname="localhost")
     publish.single(group + '.increment_seconds', increment,
                    hostname="localhost")
     publish.single(group + '.reset', 1, hostname="localhost")
+    print('mqtt_clock reset')
     
 class MqttRenderer:
     def render(board, side, colors=None):
