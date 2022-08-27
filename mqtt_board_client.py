@@ -55,6 +55,7 @@ class MqttMessageHandler:
                                   lastmove=lastmove,
                                   colors=self.colors)
             open(".board.svg", 'w').write(svg)
+            print('wrote .board.svg')
 
 def old_on_message(client, userdata, msg):
     print(msg.topic+" "+str(msg.payload))

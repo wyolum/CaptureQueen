@@ -45,7 +45,12 @@ def mqtt_publish_position(fen, lastmove_uci=None):
     payload = f'{lastmove_uci}//{fen}'
     publish.single(group + '.position', payload, hostname="localhost")
 
-
+def mqtt_setblack_ms(ms):
+    publish.single(group + '.setblack_ms', ms,
+                   hostname="localhost")
+def mqtt_setwhite_ms(ms):
+    publish.single(group + '.setwhite_ms', ms,
+                   hostname="localhost")
 def mqtt_clock_pause(paused):
     paused = int(paused)
     publish.single(group + '.paused', paused,

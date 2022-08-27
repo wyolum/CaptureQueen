@@ -15,6 +15,7 @@ from pygame_render import PygameRender
 import pgn_upload
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
+from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
 
 class ClockMove:
     def __init__(self, move, white_ms, black_ms):
@@ -22,7 +23,7 @@ class ClockMove:
         self.white_ms = white_ms
         self.black_ms = black_ms
     def __str__(self):
-        return f'{self.uci()}/{self.white_ms}/{self.black_ms}'
+        return f'{self.uci()}//{self.white_ms}//{self.black_ms}'
     def uci(self):
         return self.move.uci()
     
@@ -38,7 +39,8 @@ class ClockBoard:
         else:
             out = f'{str(self.board)}\n-/{initial_seconds * 1000}/{initial_seconds*1000}'
         return out
-    
+    def __len__(self):
+        return len(self.move_stack)
     def fen(self):
         return self.board.fen()
     
@@ -840,6 +842,8 @@ def read_position_image(game_id, move_number):
     return out
 
 
+next_white_ms = initial_seconds * 1000
+next_black_ms = initial_seconds * 1000
 while True:
     key = chr(cv2.waitKey(1) & 0xFF)
     mqtt_events = mqtt_handle_events()
@@ -853,35 +857,54 @@ while True:
                 old_board = clock_board.copy()
                 print('going back...total moves available:',
                       len(old_board.move_stack))
-            print('pop():', clock_board.pop())
-
+            clock_move = clock_board.pop()
+            mqtt_setwhite_ms(clock_move.white_ms)
+            mqtt_setblack_ms(clock_move.black_ms)
+        else:
+            clock_move = None
         render(renderers, clock_board, side, colors)
         move_number = len(clock_board.move_stack)
         print('go back', move_number)
 
         im = read_position_image(game_id, len(clock_board.move_stack))
         if im is not None:
-            cv2.imshow("Previous Move", im)
+            if clock_move is not None:
+                uci = clock_move.uci()
+                draw_square(im, uci[0:2], RED, 1)
+                draw_square(im, uci[2:4], RED, 1)
+            
+            cv2.imshow("Previous Moves", im)
     if key == 'S':
         if not game_on and old_board is not None:
             n = len(clock_board.move_stack)
             m = len(old_board.move_stack)
             print(m, n)
             if  m > n:
-                clock_board.push(old_board.move_stack[n])
+                clock_move = old_board.move_stack[n]
+                if len(old_board) > n + 1:
+                    next_move = old_board.move_stack[n+1]
+                else:
+                    next_move = ClockMove('xxxx', next_white_ms, next_black_ms)
+                clock_board.push(clock_move)
+                mqtt_setwhite_ms(next_move.white_ms)
+                mqtt_setblack_ms(next_move.black_ms)
                 move_number = n + 1
                 im = read_position_image(game_id, move_number)
                 if im is not None:
-                    cv2.imshow("Previous Move", im)
+                    uci = clock_move.uci()
+                    draw_square(im, uci[0:2], RED, 1)
+                    draw_square(im, uci[2:4], RED, 1)
+                    cv2.imshow("Previous Moves", im)
                 
             render(renderers, clock_board, side, colors)
-            print('go forward')
     if key == 'u':
         pgn_upload.upload_to_lichess(clock_board)
     if 'capture_queen.turn' in mqtt_events:
         ### TODO: handle more than one event
         turn_msg = str(mqtt_events['capture_queen.turn'][0])[2:-1]
-        turn, white_ms, black_ms = map(int, turn_msg.split('//'))
+        white_ms = next_white_ms
+        black_ms = next_black_ms
+        turn, next_white_ms, next_black_ms = map(int, turn_msg.split('//'))
         clock_hit = True
         old_board = None
     rect = get_rect()
@@ -904,6 +927,7 @@ while True:
             last_rect = rect.copy()
             update_camera_view(rect)
         game_on = True
+        cv2.destroyWindow("Previous Moves")
         for i in range(1):
             ret, frame = vid.read() ## clear buffer
             
@@ -941,13 +965,19 @@ while True:
         update_camera_view(rect)
         render(renderers, clock_board, side, colors)
     if 'capture_queen.reset_pi' in mqtt_events:
+        next_white_ms = initial_seconds * 1000
+        next_black_ms = initial_seconds * 1000
+        old_board = None
         print('restart')
         clock_board = ClockBoard()
         render(renderers, None, side, colors)        
         game_on = False
         
-    if game_on and key == 'r':
+    if key == 'r':
         ### restart
+        next_white_ms = initial_seconds * 1000
+        next_black_ms = initial_seconds * 1000
+        old_board = None
         print('restart')
         game_id += 1
         clock_board = ClockBoard()
