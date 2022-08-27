@@ -66,6 +66,14 @@ void setturn_cb(byte *payload, unsigned int length){
   turn = bytes2int(payload, length);
 }
 
+void setwhite_ms_cb(byte *payload, unsigned int length){
+  counter_ms[players[WHITE]] = bytes2int(payload, length);
+}
+
+void setblack_ms_cb(byte *payload, unsigned int length){
+  counter_ms[players[BLACK]] = bytes2int(payload, length);
+}
+
 void set_initial_seconds_cb(byte *payload, unsigned int length){
   initial_seconds = bytes2int(payload, length);
 }
@@ -76,15 +84,19 @@ void set_increment_cb(byte *payload, unsigned int length){
 TopicListener reset_listener = {"capture_queen.reset", reset_cb};
 TopicListener pause_listener = {"capture_queen.paused", pause_cb};
 TopicListener setturn_listener = {"capture_queen.setturn", setturn_cb};
+TopicListener setwhite_ms_listener = {"capture_queen.setwhite_ms", setwhite_ms_cb};
+TopicListener setblack_ms_listener = {"capture_queen.setblack_ms", setblack_ms_cb};
 TopicListener increment_listener = {"capture_queen.increment_seconds", set_increment_cb};
 TopicListener initial_seconds_listener = {"capture_queen.initial_seconds", set_initial_seconds_cb};
 
-const int N_TOPIC_LISTENERS = 5;
+const int N_TOPIC_LISTENERS = 7;
 TopicListener *TopicListeners[N_TOPIC_LISTENERS] = {&reset_listener,
 						    &pause_listener,
 						    &setturn_listener,
 						    &increment_listener,
-						    &initial_seconds_listener};
+						    &initial_seconds_listener,
+						    &setblack_ms_listener,
+						    &setwhite_ms_listener};
 
 void setup_wifi() {
   //wifiManager.resetSettings(); // uncomment to forget network settings
@@ -112,21 +124,24 @@ void subscribe(){
   }
 }
 
-void publish_int(char* topic, int val){
-  String val_str = String(val);
-  mqtt_client.publish(topic, val_str.c_str());
-  Serial.print("publish_int::");
+void publish_msg(char* topic, const char* msg){
+  Serial.print("publish_msg::");
   Serial.print(topic);
   Serial.print("::");
-  Serial.println(val);
+  Serial.println(msg);
+  mqtt_client.publish(topic, msg);
+}
+
+void publish_int(char* topic, int val){
+  String val_str = String(val);
+  publish_msg(topic, val_str.c_str());
 }
 
 void mqtt_publish_state(){
-  if(!paused){
-    publish_int("capture_queen.turn",  players[turn]);
-  }
-  publish_int("capture_queen.white_ms",  counter_ms[players[WHITE]]);
-  publish_int("capture_queen.black_ms",  counter_ms[players[BLACK]]);
+  String msg = String(players[turn]) + String("//") +
+    String(counter_ms[players[WHITE]]) + String("//") + 
+    String(counter_ms[players[BLACK]]);
+  publish_msg("capture_queen.turn",  msg.c_str());
 }
 void mqtt_connect(){
   String str;
