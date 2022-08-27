@@ -44,6 +44,9 @@ $python3 fen_capture.py --calibrate True
 <IMG>
 Hit the 'q' key again to quit the program
 
+
+# Play Chess
+## On the Raspberry Pi
 $python3 fen_capture.py
 <IMG>
 Set the pieces in the starting positions.
@@ -52,33 +55,29 @@ the correct spot.
 Hit 'f' to flip the board view
 
 Power the clock and wait for LEDs to display.
--- hit the button on the side of the black pieces.  This starts the white
+## hit the button on the side of the black pieces.  This starts the white
    clock and triggers an image to be taken of the starting position.
--- Make a move with the white pieces and hit the button on the white side 
+## Make a move with the white pieces and hit the button on the white side 
    of the board.
    <IMG>
--- Continue making moves and hitting the clock button.  The moves should
+## Continue making moves and hitting the clock button.  The moves should
    be visible on the screen.
    <IMG>
--- If an error occurs, hit the left arrow key to go back to the last correct
+## If an error occurs, hit the left arrow key to go back to the last correct
    position as shown on the "Previous Moves" window.  If you go too far, 
    hit the right arrow to re-do moves.  When you are satisifed with the 
    position, hit the button on the clock of the side with the most recently 
    completed move on the board.  The game will resume with the previous time
    on the clock.
    <IMG>
--- When the game is over, hit the 'u' key to copy the PGN file and open a 
+## When the game is over, hit the 'u' key to copy the PGN file and open a 
    web browswer to lichess.org/import and paste (CTRL-V) the game into the
    text input window and click the import button for post-game analysis.
    <IMG>
--- hit the 'r' key to reset the board and start a new game.
+## hit the 'r' key to reset the board and start a new game.
 
 
-Usage:
--- Set the camera with a birds eye view of the board.  A simple folding 
-tripod was designed for this purpose.
-
-
+# Resources
 https://www.raspberrypi.com/products/raspberry-pi-4-model-b/
 https://www.raspberrypi.com/products/camera-module-v2/
 https://www.raspberrypi.com/products/raspberry-pi-touch-display/
