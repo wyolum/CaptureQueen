@@ -230,13 +230,6 @@ clock_board = ClockBoard()
 
 open('.fen', 'w').write(clock_board.fen())
 
-def average_square(data):
-    h, w, d = data.shape
-    x = w//5
-    y = h//5
-    
-    return np.mean(data[y:-y,x:-x])
-
 last_rect = None
 def find_move(rect):
     global last_rect
@@ -345,322 +338,6 @@ move_number = 0
 DEG = np.pi / 180
 grid_guess = [-27214, -3834, 43305, 2.2340, 0.8692, -1.0829]
 
-def linfit(centers):
-    ## try y = mx + b
-    x, y = centers.T
-    n = len(centers)
-    A = np.column_stack([x, np.ones(n)])
-    return np.linalg.pinv(A.T @ A) @ (A.T @ y)
-
-def linfit2d(ij, x):
-    '''
-    x ~= i * a + j * b + c
-    '''
-    n = len(x)
-    A = np.column_stack([ij, np.ones(n)])
-    return np.linalg.pinv(A.T @ A) @ (A.T @ x)
-
-def expfit(centers):
-    ## y = a * e^(bx)
-    ## logy = log(a) + b log(x)
-    loga, b = linfit(np.log(centers))
-    a = np.exp(loga)
-    return np.array([a, b])
-
-def quadfit2d(ij, x):
-    n = len(x)
-#    A = np.column_stack([i**2
-def find_intersection(lines):
-    ### find intersection of two lines
-    ### a0x + b0 = a1x + b1
-    ### x(a0 - a1) = b1 - b0
-    ### x = (b1 - b0) / (a0 - a1)
-    lines = np.array(lines)
-    a0, a1 = lines[:, 0]
-    b0, b1 = lines[:, 1]
-    x = (b1 - b0) / (a0 - a1)
-    y = a0 * x + b0
-    return np.array([x, y])
-
-def average_intersection(lines):
-    if len(lines) < 2:
-        return np.zeros(2) * np.nan
-    lines = np.array(lines)
-    n = len(lines)
-    pts = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            pts.append(find_intersection(lines[[i, j]]))
-    out = np.mean(pts, axis=0)
-    if np.isscalar(out):
-        print(lines)
-        print('average_intersection', out)
-    return out
-### create all lines:
-hori = []
-vert = []
-left = []
-righ = []
-for start in range(8):
-    hori.append(np.array([hori_vanish_id] + [start * 8 + i for i in range(8)]))
-    vert.append(np.array([vert_vanish_id] + [start + 8 * i for i in range(8)]))
-
-for start in np.arange(8):
-    left.append(np.array([left_vanish_id] +
-                         [8 * start + 9 * i for i in range(8 - start)]))
-    righ.append(np.array([righ_vanish_id] +
-                         [8 * start - 7 * i for i in range(start + 1)]))
-for start in range(1, 8):
-    left.append(np.array([left_vanish_id] +
-                         [start + 9 * i for i in range(8 - start)]))
-    righ.append(np.array([righ_vanish_id] +
-                         [8 * start + 7 + i * 7 for i in range(8 - start)]))
-for diags in [hori, vert, left, righ]:
-    for line in diags:
-        line.sort()
-
-def solve_diag(img, line, ids, centers, color, width, draw=False):
-    n = len(ids)
-    keep = [i for i in range(n) if ids[i] in line]
-    ids = ids[keep]
-    centers = centers[keep]
-    if len(keep) > 1:
-        a, b = linfit(centers)
-        x = np.array([0, IM_WIDTH])
-        y = (a * x + b).astype(int)
-        if draw:
-            cv2.line(img, (x[0], y[0]), (x[1], y[1]), color, width)
-        out = np.array([a, b])
-    else:
-        out = np.nan * np.zeros(2)
-    return out
-
-def solve_intersection(ab, cd):
-    a, b = ab
-    c, d = cd
-    if np.abs(a - c) < 1e-6:
-        #parallel
-        out = [np.inf, np.inf]
-    else:
-        x = (d - b) / (a - c)
-        y = a * x + b
-        out = np.array([x, y])
-    return out
-
-def draw_perspective(img, ids, centers):
-    ### find vanishing point for columns
-    if False:
-        for center in centers:
-            cv2.circle(img, tuple(center.astype(int)), 4, BLUE, 4)
-    todo = set(range(64))
-    todo = todo - set(ids)
-    if len(todo) < 1:
-        return
-    algs = [board_map[id][0] for id in ids]
-    coords = np.array([val_to_coords(id) for id in ids])
-
-    cols = coords[:,0]
-    rows = coords[:,1]
-    row_lines = []
-    ## center = f(coord)
-    for r in set(rows):
-        keep = np.logical_and(rows == r, ids >= 0)
-        line = centers[keep]
-        if len(line) > 1:
-            a, b = linfit(centers[keep])
-
-            row_lines.append([a, b])
-            x = np.array([0, IM_WIDTH])
-            y = (a * x + b).astype(int)
-            #cv2.line(img, (x[0], y[0]), (x[1], y[1]), BLUE, 1)
-
-    vanish_rows = average_intersection(row_lines).astype(int)
-    if np.any(np.isnan(vanish_rows)):
-        pass
-    else:
-        board_map[hori_vanish_id][2] = vanish_rows
-        
-    #cv2.circle(img, tuple(vanish_rows), 4, (56, 123, 26), 4)
-    col_lines = []
-    for c in set(cols):
-        keep = np.logical_and(cols == c, ids >= 0)
-        line = centers[keep]
-        if len(line) > 1:
-            a, b = linfit(centers[keep])
-            col_lines.append([a, b])
-            x = np.array([0, IM_WIDTH])
-            y = (a * x + b).astype(int)
-            if False: # c > 4
-                print('coords[keep]:\n', coords[keep])
-                for c in centers[keep]:
-                    cv2.circle(img, tuple(c.astype(int)), 8, CYAN, 4)
-                cv2.line(img, (x[0], y[0]), (x[1], y[1]), CYAN, 1)
-     
-            
-    #vanish_cols = average_intersection(col_lines).astype(int)
-    vanish_cols = np.arange(2) * np.nan
-    if np.any(np.isnan(vanish_cols)):
-        pass
-    else:
-        board_map[vert_vanish_id][2] = vanish_cols
-        
-    left_ab = []
-    for d in left:
-        ab = solve_diag(img, d, ids, centers, GREEN, 1, draw=False)
-        if np.any(np.isnan(ab)):
-            pass
-        else:
-            left_ab.append(ab)
-    vanish_left = average_intersection(left_ab).astype(int)
-    if np.any(np.isnan(vanish_left)):
-        pass
-    else:
-        board_map[left_vanish_id][2] = vanish_left
-    #centers = np.array(list(centers) + [vanish_left])
-    #ids = np.array(list(ids) + [left_vanish_id])
-    for d in left:
-        keep = [i for i in range(len(ids)) if ids[i] in d]
-        if len(keep) == 1:
-            i = ids[keep[0]]
-            c = centers[keep[0]]
-            xy = c.astype(int)
-            uw = vanish_left.astype(int)
-            a, b = linfit(np.vstack([xy, uw]))
-            x = np.array([0, IM_WIDTH])
-            y = (a * x + b).astype(int)
-
-            # cv2.line(img, (x[0], y[0]), (x[1], y[1]), GREEN, 2)
-
-    righ_ab = []
-    for d in righ:
-        ab = solve_diag(img, d, ids, centers, RED, 1, draw=False)
-        if np.any(np.isnan(ab)):
-            pass
-        else:
-            righ_ab.append(ab)
-    vanish_righ = average_intersection(righ_ab).astype(int)
-    if np.any(np.isnan(vanish_righ)):
-        pass
-    else:
-        board_map[righ_vanish_id][2] = vanish_righ
-    #centers = np.array(list(centers) + [vanish_righ])
-    #ids = np.array(list(ids) + [righ_vanish_id])
-    for d in righ:
-        keep = [i for i in range(len(ids)) if ids[i] in d]
-        if len(keep) == 1:
-            i = ids[keep[0]]
-            c = centers[keep[0]]
-            xy = c.astype(int)
-            uw = vanish_righ.astype(int)
-            a, b = linfit(np.vstack([xy, uw]))
-            x = np.array([0, IM_WIDTH])
-            y = (a * x + b).astype(int)
-
-            #cv2.line(img, (x[0], y[0]), (x[1], y[1]), RED, 2)
-
-
-    righ_ab = []
-    for d in righ:
-        ab = solve_diag(img, d, ids, centers, (255, 12, 123), 1, False)
-        righ_ab.append(ab)
-    vanish_righ = average_intersection(righ_ab).astype(int)
-        
-    for h in hori:
-        ab = solve_diag(img, h, ids, centers, (255, 12, 123), 1, False)
-        if np.any(np.isnan(ab)):
-            continue
-        h = set(h)
-        for v in vert:
-            cd = solve_diag(img, v, ids, centers, (255, 12, 123), 1, False)
-            if np.any(np.isnan(cd)):
-                continue
-            v = set(v)
-            intersection = todo.intersection(h.intersection(v))
-            if len(intersection) > 0:
-                todo = todo - intersection
-                x, y = solve_intersection(ab, cd).astype(int)
-                id = intersection.pop()
-                board_map[id][2] =  np.array([x, y])
-                cv2.circle(img, (x, y), 10, RED, 4)
-
-            
-    for h in hori:
-        ab = solve_diag(img, h, ids, centers, (255, 12, 123), 1, False)
-        if np.any(np.isnan(ab)):
-            continue
-        h = set(h)
-        for l in left:
-            cd = solve_diag(img, l, ids, centers, (255, 12, 123), 1, False)
-            if np.any(np.isnan(cd)):
-                continue
-            l = set(l)
-            intersection = todo.intersection(h.intersection(l))
-            if len(intersection) > 0:
-                todo = todo - intersection
-                x, y = solve_intersection(ab, cd).astype(int)
-                id = intersection.pop()
-                board_map[id][2] = np.array([x, y])
-                cv2.circle(img, (x, y), 10, GREEN, 4)
-        for r in righ:
-            cd = solve_diag(img, r, ids, centers, (255, 12, 123), 1, False)
-            if np.any(np.isnan(cd)):
-                continue
-            r = set(r)
-            intersection = todo.intersection(h.intersection(r))
-            if len(intersection) > 0:
-                todo = todo - intersection
-                x, y = solve_intersection(ab, cd).astype(int)
-                id = intersection.pop()
-                board_map[id][2] =  np.array([x, y])
-                cv2.circle(img, (int(x), int(y)), 10, BLUE, 4)
-
-    for v in vert:
-        ab = solve_diag(img, v, ids, centers, (255, 12, 123), 1, False)
-        if np.any(np.isnan(ab)):
-            continue
-        v = set(v)
-        for l in left:
-            cd = solve_diag(img, l, ids, centers, (255, 12, 123), 1, False)
-            if np.any(np.isnan(cd)):
-                continue
-            l = set(l)
-            intersection = todo.intersection(v.intersection(l))
-            if len(intersection) > 0:
-                todo = todo - intersection
-                x, y = solve_intersection(ab, cd).astype(int)
-                id = intersection.pop()
-                board_map[id][2] = np.array([x, y])
-                cv2.circle(img, (int(x), int(y)), 10, (56, 123, 26), 4)
-        for r in righ:
-            cd = solve_diag(img, r, ids, centers, (255, 12, 123), 1, False)
-            if np.any(np.isnan(cd)):
-                continue
-            r = set(r)
-            intersection = todo.intersection(v.intersection(r))
-            if len(intersection) > 0:
-                todo = todo - intersection
-                x, y = solve_intersection(ab, cd).astype(int)
-                id = intersection.pop()
-                board_map[id][2] = np.array([x, y])
-                cv2.circle(img, (int(x), int(y)), 10, (56, 123, 26), 4)
-    for r in righ:
-        ab = solve_diag(img, v, ids, centers, (255, 12, 123), 1, False)
-        if np.any(np.isnan(ab)):
-            continue
-        r = set(r)
-        for l in left:
-            cd = solve_diag(img, l, ids, centers, (255, 12, 123), 1, False)
-            if np.any(np.isnan(cd)):
-                continue
-            l = set(l)
-            intersection = todo.intersection(r.intersection(l))
-            if len(intersection) > 0:
-                todo = todo - intersection
-                x, y = solve_intersection(ab, cd).astype(int)
-                id = intersection.pop()
-                board_map[id][2] = np.array([x, y])
-                cv2.circle(img, (int(x), int(y)), 10, (56, 123, 26), 4)
-
 FLIP_THRESH = 250
 def check_flip():
     balance = 0
@@ -684,12 +361,16 @@ def get_side():
         out = chess.WHITE
     return out
 
-def findChessboardCorners(n_ave=10):
+def findChessboardCorners(n_ave=10, max_tries=20):
+    print('Locating chessboard...')
     all_corners = []
-    while len(all_corners) < n_ave:
+    iter = 0
+    while len(all_corners) < n_ave and iter < max_tries:
+        print(f'iter: {iter}/{max_tries} {len(all_corners)}/{n_ave}')
         ret, frame = vid.read()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         ret, corners = cv2.findChessboardCorners(gray, (7, 7))
+        #ret, corners = cv2.findChessboardCorners(gray, (3, 7))
         if ret:
             font = cv2.FONT_HERSHEY_SIMPLEX
             corners = corners.squeeze()
@@ -700,6 +381,7 @@ def findChessboardCorners(n_ave=10):
                 row = row[np.argsort(row[:,0])]
                 corners[i] = row
             all_corners.append(corners)
+        iter += 1
     all_corners = np.array(all_corners)
     corners = np.mean(all_corners, axis=0)
     return corners
@@ -959,7 +641,7 @@ while True:
             side = chess.BLACK
         else:
             side = chess.WHITE
-        render(renderers, ckock_board, side, colors)
+        render(renderers, clock_board, side, colors)
     if key == 'f':
         flip_board = not flip_board
         update_camera_view(rect)
