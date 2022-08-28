@@ -81,10 +81,10 @@ Power the clock and wait for LEDs to display.
   see current images of the game in progress.
 
 # Resources
-https://www.raspberrypi.com/products/raspberry-pi-4-model-b/
-https://www.raspberrypi.com/products/camera-module-v2/
-https://www.raspberrypi.com/products/raspberry-pi-touch-display/
-https://www.adafruit.com/product/3671
+1. https://www.raspberrypi.com/products/raspberry-pi-4-model-b/
+1. https://www.raspberrypi.com/products/camera-module-v2/
+1. https://www.raspberrypi.com/products/raspberry-pi-touch-display/
+1. https://www.adafruit.com/product/3671
 
-https://github.com/karayaman/Play-online-chess-with-real-chess-board
-https://pypi.org/project/chess/
+1. https://github.com/karayaman/Play-online-chess-with-real-chess-board
+1. https://pypi.org/project/chess/
