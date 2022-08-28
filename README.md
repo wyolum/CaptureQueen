@@ -84,6 +84,7 @@ Power the clock and wait for LEDs to display.
 https://www.raspberrypi.com/products/raspberry-pi-4-model-b/
 https://www.raspberrypi.com/products/camera-module-v2/
 https://www.raspberrypi.com/products/raspberry-pi-touch-display/
+https://www.adafruit.com/product/3671
 
 https://github.com/karayaman/Play-online-chess-with-real-chess-board
 https://pypi.org/project/chess/
