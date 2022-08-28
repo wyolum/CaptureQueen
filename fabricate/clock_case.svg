@@ -2,17 +2,31 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    width="20in"
    height="12in"
    viewBox="0 0 508.00001 304.80001"
    version="1.1"
    id="svg5"
-   inkscape:version="1.1.1 (c3084ef, 2021-09-22)"
-   sodipodi:docname="clock_case.svg"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg">
+   inkscape:version="0.92.2 5c3e80d, 2017-08-06"
+   sodipodi:docname="clock_case.svg">
+  <metadata
+     id="metadata152">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
   <sodipodi:namedview
      id="namedview7"
      pagecolor="#ffffff"
@@ -24,14 +38,14 @@
      inkscape:document-units="mm"
      showgrid="false"
      units="in"
-     inkscape:snap-global="false"
-     inkscape:zoom="0.84986109"
-     inkscape:cx="578.41477"
-     inkscape:cy="550.43432"
+     inkscape:snap-global="true"
+     inkscape:zoom="0.34351583"
+     inkscape:cx="1026.6448"
+     inkscape:cy="661.79397"
      inkscape:window-width="1440"
-     inkscape:window-height="900"
+     inkscape:window-height="855"
      inkscape:window-x="0"
-     inkscape:window-y="0"
+     inkscape:window-y="23"
      inkscape:window-maximized="0"
      inkscape:current-layer="layer1" />
   <defs
@@ -46,22 +60,10 @@
        width="179.89999"
        height="47.693836"
        x="31.526308"
-       y="89.315781" />
-    <circle
-       style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
-       id="path1038"
-       cx="164.64273"
-       cy="112.09212"
-       r="13.704772" />
-    <circle
-       style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
-       id="circle1122"
-       cx="80.200241"
-       cy="112.09212"
-       r="13.704772" />
+       y="71.853264" />
     <g
        id="g2138"
-       transform="translate(4.7172251,-5.915535)"
+       transform="translate(4.7172251,-23.378044)"
        style="stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
@@ -78,7 +80,7 @@
     </g>
     <g
        id="g2310"
-       transform="translate(164.97065,-5.320413)"
+       transform="translate(164.97065,-22.782921)"
        style="stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
@@ -99,10 +101,10 @@
        width="179.90001"
        height="51.909294"
        x="32.471485"
-       y="144.66788" />
+       y="122.97225" />
     <g
        id="g2660"
-       transform="translate(-120.43868,2.0559792)"
+       transform="translate(-120.43868,-19.639861)"
        style="stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none">
       <g
          id="g2652"
@@ -141,7 +143,7 @@
     </g>
     <g
        id="g2674"
-       transform="translate(-35.996182,2.0559792)"
+       transform="translate(-35.996182,-19.639861)"
        style="stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none">
       <g
          id="g2666"
@@ -184,29 +186,30 @@
        width="179.92786"
        height="26.927853"
        x="32.457485"
-       y="203.39058" />
+       y="177.46176" />
     <rect
        style="fill:none;stroke:#000000;stroke-width:0.128604;stroke-miterlimit:4;stroke-dasharray:none"
        id="rect2792"
        width="179.8714"
        height="85.871399"
        x="32.48579"
-       y="235.92891" />
+       y="206.82513" />
     <rect
        style="fill:none;stroke:#000000;stroke-width:0.115733;stroke-miterlimit:4;stroke-dasharray:none"
        id="rect2794"
        width="179.88426"
        height="63.884266"
        x="31.534174"
-       y="17.903763" />
+       y="4.674602" />
     <circle
        style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
        id="circle2796"
        cx="41.045795"
-       cy="71.753227"
+       cy="58.524048"
        r="0.98901099" />
     <g
-       id="g3066">
+       id="g3066"
+       transform="translate(0,-13.229169)">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
          id="circle3060"
@@ -222,7 +225,7 @@
     </g>
     <g
        id="g3072"
-       transform="translate(160.25343)">
+       transform="translate(160.25343,-13.229169)">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
          id="circle3068"
@@ -238,7 +241,7 @@
     </g>
     <g
        id="g3198"
-       transform="translate(0,-0.0660553)">
+       transform="translate(0,-29.170234)">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
          id="circle3062-8"
@@ -254,7 +257,7 @@
     </g>
     <g
        id="g3204"
-       transform="translate(160.25343,-0.0660553)">
+       transform="translate(160.25343,-29.170234)">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
          id="circle3200"
@@ -269,7 +272,8 @@
          r="0.98901099" />
     </g>
     <g
-       id="g3610">
+       id="g3610"
+       transform="translate(0,-21.695841)">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
          id="circle3518"
@@ -285,7 +289,7 @@
     </g>
     <g
        id="g3616"
-       transform="translate(160.25343)">
+       transform="translate(160.25343,-21.695841)">
       <circle
          style="fill:none;stroke:#000000;stroke-width:0.1;stroke-miterlimit:4;stroke-dasharray:none"
          id="circle3612"
@@ -299,5 +303,27 @@
          cy="182.38263"
          r="0.98901099" />
     </g>
+    <circle
+       style="fill:none;stroke:#000000;stroke-width:0.109053;stroke-miterlimit:4;stroke-dasharray:none"
+       id="circle867"
+       cx="80.20047"
+       cy="94.629837"
+       r="14.945474" />
+    <circle
+       style="fill:none;stroke:#000000;stroke-width:0.109053;stroke-miterlimit:4;stroke-dasharray:none"
+       id="circle869"
+       cx="164.64273"
+       cy="94.629837"
+       r="14.945474" />
+    <path
+       style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.1;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;stroke-miterlimit:4;stroke-dasharray:none"
+       d="m 320.94355,40.857058 0.24172,25.921872 H 255.25538 V 13.849044 l 32.68817,0.241734 z"
+       id="path158"
+       inkscape:connector-curvature="0" />
+    <path
+       inkscape:connector-curvature="0"
+       id="path965"
+       d="m 320.94355,112.75082 0.24172,-25.921866 h -65.92989 v 52.929886 l 32.68817,-0.24174 z"
+       style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.1;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1" />
   </g>
 </svg>
