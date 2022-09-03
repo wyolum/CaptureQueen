@@ -6,8 +6,12 @@ from . import arrows
 import tkinter as tk
 from PIL import Image, ImageTk
 
-color1 ='white'
-color2 = 'grey'
+import sys
+sys.path.append('../')
+from defaults import colors
+
+color1 =colors['square light']
+color2 = colors['square dark']
 
 def get_color_from_coords(coords):
     return [color1, color2][(coords[0] - coords[1]) % 2]

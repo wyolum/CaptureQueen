@@ -45,6 +45,9 @@ def mqtt_publish_position(fen, lastmove_uci=None):
     payload = f'{lastmove_uci}//{fen}'
     publish.single(group + '.position', payload, hostname="localhost")
 
+def mqtt_sethalfmove(halfmove):
+    publish.single(group + '.sethalfmove', halfmove,
+                   hostname="localhost")
 def mqtt_setblack_ms(ms):
     publish.single(group + '.setblack_ms', ms,
                    hostname="localhost")

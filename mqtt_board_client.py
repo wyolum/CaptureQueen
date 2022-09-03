@@ -14,18 +14,6 @@ svg = chess.svg.board(board,size=640, flipped=False,
                       colors=defaults.colors)
 open(".board.svg", 'w').write(svg)
 
-def old_on_connect(client, userdata, flags, rc):
-    print("Connected with result code "+str(rc))
-
-    # Subscribing in on_connect() means that if we lose the connection and
-    # reconnect then subscriptions will be renewed.
-    #client.subscribe("capture_queen.turn")
-    #client.subscribe("capture_queen.white_ms")
-    #client.subscribe("capture_queen.black_ms")
-    client.subscribe("capture_queen.reset")
-    client.subscribe('capture_queen.position')
-    client.subscribe('capture_queen.lastmove')
-
 class MqttMessageHandler:
     def __init__(self):
         self.board = chess.Board()

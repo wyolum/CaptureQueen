@@ -16,21 +16,40 @@ import pgn_upload
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
 from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
+from mqtt_clock_client import mqtt_sethalfmove
 
+display_on = False
+def imshow(name, frame):
+    if display_on:
+        cv2.imshow(name, frame)
 class ClockMove:
     def __init__(self, move, white_ms, black_ms):
         self.move = move
         self.white_ms = white_ms
         self.black_ms = black_ms
+    def __getattr__(self, name):
+        return getattr(self.move, name)
     def __str__(self):
         return f'{self.uci()}//{self.white_ms}//{self.black_ms}'
     def uci(self):
         return self.move.uci()
     
 class ClockBoard:
-    def __init__(self):
+    def __init__(self, initial_seconds, increment_seconds):
+        self.initial_seconds = initial_seconds
+        self.increment_seconds = increment_seconds
         self.board = chess.Board()
         self.move_stack = []
+    def set_timeout(self, white_ms, black_ms):
+        legal_moves = list(self.legal_moves)
+        if len(legal_moves) > 0:
+            ### make dummy move to complete game with time forfiet
+            move = legal_moves[0]
+            self.move_stack.append(ClockMove(move, white_ms, black_ms))
+    def outcome(self):
+        return self.board.outcome()
+    def ___getattr__(self, name):
+        return getattr(self.board, name)
     def __repr__(self):
         return self.fen()
     def __str__(self):
@@ -68,7 +87,7 @@ class ClockBoard:
         return self.board.is_en_passant(move)
 
     def copy(self):
-        out = ClockBoard()
+        out = ClockBoard(self.initial_seconds, self.increment_seconds)
         out.board = self.board.copy()
         out.move_stack = copy.copy(self.move_stack)
         return out
@@ -78,13 +97,13 @@ for file in glob.glob('captures/*.png'):
 game_id = 0
 
 initial_seconds = 300
-initial_increment = 0
+increment_seconds = 0
 
 mqtt_pending_msgs = []
 def on_mqtt(msg):
     mqtt_pending_msgs.append(msg)
 
-def mqtt_handle_events():
+def mqtt_gather_events():
     out = {}
     while mqtt_pending_msgs:
         msg = mqtt_pending_msgs.pop()
@@ -226,7 +245,7 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0 ,0)
 GRAY = (128, 128, 128)
 
-clock_board = ClockBoard()
+clock_board = ClockBoard(initial_seconds, increment_seconds)
 
 open('.fen', 'w').write(clock_board.fen())
 
@@ -390,7 +409,7 @@ def centerup():
     print("Center board in field of view.  Press 'q' to continue.")
     while 1:
         ret, frame = vid.read()
-        cv2.imshow('frame', frame)
+        imshow('frame', frame)
         key = cv2.waitKey(1)
         if key & 0xFF == ord('q'):
             break
@@ -432,7 +451,7 @@ def calibrate():
         rect = cv2.warpPerspective(frame, M, (IM_HEIGHT, IM_HEIGHT),
                                    flags=cv2.INTER_LINEAR)        
 
-        cv2.imshow('rect', rect)
+        imshow('rect', rect)
         key = cv2.waitKey(1)
         if key & 0xFF == ord('q'):
             break
@@ -498,37 +517,36 @@ def update_camera_view(rect):
         view = rect[::-1, ::-1]
     else:
         view = rect
-    cv2.imshow('view', view)
+    imshow('view', view)
     
 side = get_side()
 render(renderers, None, side==chess.BLACK, colors=colors)
 
-mqtt_clock_reset(initial_seconds, initial_increment)
+mqtt_clock_reset(initial_seconds, increment_seconds)
 
 old_board = None
 
 def get_position_image_filename(game_id, move_numner):
     return f'captures/{game_id:04d}_{move_number:04d}.png'
 def write_position_image(rect, game_id, move_number):
-    print('write', game_id, move_number)
     png = get_position_image_filename(game_id, move_number)
     cv2.imwrite(png, rect)    
 def read_position_image(game_id, move_number):
     png = get_position_image_filename(game_id, move_number)
     if os.path.exists(png):
-        print('read', game_id, move_number, png)
         out = cv2.imread(png)
     else:
-        print('XXXX', game_id, move_number, png)
         out = None
     return out
 
 
 next_white_ms = initial_seconds * 1000
 next_black_ms = initial_seconds * 1000
+white_ms = initial_seconds * 1000
+black_ms = initial_seconds * 1000
 while True:
     key = chr(cv2.waitKey(1) & 0xFF)
-    mqtt_events = mqtt_handle_events()
+    mqtt_events = mqtt_gather_events()
     clock_hit = False
     # print(key)
     if key == 'Q':
@@ -542,6 +560,7 @@ while True:
             clock_move = clock_board.pop()
             mqtt_setwhite_ms(clock_move.white_ms)
             mqtt_setblack_ms(clock_move.black_ms)
+            mqtt_sethalfmove(len(clock_board.move_stack))
         else:
             clock_move = None
         render(renderers, clock_board, side, colors)
@@ -555,12 +574,11 @@ while True:
                 draw_square(im, uci[0:2], RED, 1)
                 draw_square(im, uci[2:4], RED, 1)
             
-            cv2.imshow("Previous Moves", im)
+            imshow("Previous Moves", im)
     if key == 'S':
         if not game_on and old_board is not None:
             n = len(clock_board.move_stack)
             m = len(old_board.move_stack)
-            print(m, n)
             if  m > n:
                 clock_move = old_board.move_stack[n]
                 if len(old_board) > n + 1:
@@ -570,13 +588,14 @@ while True:
                 clock_board.push(clock_move)
                 mqtt_setwhite_ms(next_move.white_ms)
                 mqtt_setblack_ms(next_move.black_ms)
+                mqtt_sethalfmove(len(clock_board.move_stack))
                 move_number = n + 1
                 im = read_position_image(game_id, move_number)
                 if im is not None:
                     uci = clock_move.uci()
                     draw_square(im, uci[0:2], RED, 1)
                     draw_square(im, uci[2:4], RED, 1)
-                    cv2.imshow("Previous Moves", im)
+                    imshow("Previous Moves", im)
                 
             render(renderers, clock_board, side, colors)
     if key == 'u':
@@ -587,15 +606,29 @@ while True:
         white_ms = next_white_ms
         black_ms = next_black_ms
         turn, next_white_ms, next_black_ms = map(int, turn_msg.split('//'))
+        if next_black_ms <= 0 or next_white_ms <= 0:
+            clock_board.set_timeout(next_white_ms, next_black_ms)
         clock_hit = True
         old_board = None
+    
     rect = get_rect()
     if not game_on:
-        for i in [1, 2]:
-            for letter in 'abcdefgh':
-                color = WHITE
-                draw_square(rect, f'{letter}{i}', WHITE, 2)
-                draw_square(rect, f'{letter}{9-i}', GRAY, 2)
+        ranks = str(clock_board).splitlines()[:8]
+        for j, rank in enumerate(ranks):
+            rank = rank[0::2]
+            number = 8 - j
+            for i, c in enumerate(rank[:8]):
+                letter = 'abcdefgh'[i]
+                if c != '.':
+                    if c.upper() == c:
+                        color = WHITE
+                    else:
+                        color = GRAY
+                    draw_square(rect, f'{letter}{number}', color, 2)
+        #for i in [1, 2]:
+        #    for letter in 'abcdefgh':
+        #        draw_square(rect, f'{letter}{i}', WHITE, 2)
+        #        draw_square(rect, f'{letter}{9-i}', GRAY, 2)
 
         bbox = get_board_bbox().astype(int)
         cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
@@ -651,7 +684,9 @@ while True:
         next_black_ms = initial_seconds * 1000
         old_board = None
         print('restart')
-        clock_board = ClockBoard()
+        fen = clock_board.fen()
+        open('.fen', 'w').write(fen)
+        clock_board = ClockBoard(initial_seconds, increment_seconds)
         render(renderers, None, side, colors)        
         game_on = False
         
@@ -661,9 +696,11 @@ while True:
         next_black_ms = initial_seconds * 1000
         old_board = None
         print('restart')
+        fen = clock_board.fen()
+        open('.fen', 'w').write(fen)
         game_id += 1
-        clock_board = ClockBoard()
-        mqtt_clock_reset(initial_seconds, initial_increment)
+        clock_board = ClockBoard(initial_seconds, increment_seconds)
+        mqtt_clock_reset(initial_seconds, increment_seconds)
         render(renderers, None, side, colors)        
         game_on = False
         
