@@ -1,6 +1,7 @@
 #include <TM1637Display.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
+#include <ESP8266HTTPClient.h>
 
 const int CLK=5;
 const int DIO=4;
@@ -29,6 +30,81 @@ WiFiManager wifiManager;
 WiFiClient espClient;
 PubSubClient mqtt_client(espClient);
 
+void parse_ip(String s, uint8_t* int4){
+  int start = 0;
+  int stop;
+  String substr;
+  
+  for(int i=0; i<4; i++){
+    stop = s.indexOf('.', start);
+    substr = s.substring(start, stop);
+    Serial.println(substr);
+    int4[i] = (uint8_t)substr.toInt();
+    start = stop + 1;
+  }
+}
+
+String jsonLookup(String s, String name){
+  int start = s.indexOf(name) + name.length() + 3;
+  int stop = s.indexOf('"', start);
+  //Serial.println(s.substring(start, stop));
+  return s.substring(start, stop);
+}
+
+uint8_t mqtt_ip_address[4] = {0, 0, 0, 0};
+void get_mqtt_server_ip(){
+
+  HTTPClient http;
+  
+  Serial.print("[HTTP] begin...\n");
+  //String url = String("http://www.wyolum.com/utc_offset/get_localips.py") +
+  //  String("?dev_type=CaptureQueen.Mosquitto");
+  String url = String("http://wyolum.com/utc_offset/utc_offset.py") +
+    String("?dev_type=CaptureQueen.Clock") +
+    String("&localip=") +
+    String(WiFi.localIP()[0]) + String('.') + 
+    String(WiFi.localIP()[1]) + String('.') + 
+    String(WiFi.localIP()[2]) + String('.') + 
+    String(WiFi.localIP()[3]) + String('&') +
+    String("macaddress=") + WiFi.macAddress();
+
+  Serial.println(url);
+  http.begin(url);
+  
+  Serial.print("[HTTP] GET...\n");
+  // start connection and send HTTP header
+  int httpCode = http.GET();
+  Serial.printf("[HTTP] ... code: %d\n", httpCode);
+  
+  // httpCode will be negative on error
+  if(httpCode > 0) {
+    // HTTP header has been send and Server response header has been handled
+    Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+    // file found at server
+    //String findme = String("offset_seconds");
+    if(httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      Serial.print("payload:");
+      Serial.println(payload);
+      payload.replace(" ", "");
+      String mqtt_ip_str = jsonLookup(payload, String("mqtt_ip_address"));
+      Serial.println(mqtt_ip_str);
+      parse_ip(mqtt_ip_str, mqtt_ip_address);
+      for(int ii=0; ii<4; ii++){
+	Serial.print(mqtt_ip_address[ii]);
+	if(ii < 3){
+	Serial.print(".");
+	}
+      }
+      Serial.println();
+    }
+    else{
+      Serial.println("No timezone found");
+    }
+  }
+}
+
+
 bool bytes2bool(byte* payload, unsigned int length){
   bool out = false;
   if(length > 0){
@@ -55,7 +131,7 @@ struct TopicListener{
 
 void reset_cb(byte *payload, unsigned int length){
   String str_temp;
-  new_game(false);
+  new_game();
 }
 
 void pause_cb(byte *payload, unsigned int length){
@@ -66,7 +142,7 @@ void setturn_cb(byte *payload, unsigned int length){
   turn = bytes2int(payload, length);
 }
 
-void sethalfmove_number_cb(byte *payload, unsigned int length){
+void sethalfmove_cb(byte *payload, unsigned int length){
   halfmove_number = bytes2int(payload, length);
 }
 
@@ -88,9 +164,8 @@ void set_increment_cb(byte *payload, unsigned int length){
 TopicListener reset_listener = {"capture_queen.reset", reset_cb};
 TopicListener pause_listener = {"capture_queen.paused", pause_cb};
 TopicListener setturn_listener = {"capture_queen.setturn", setturn_cb};
-TopicListener sethalfmove_number_listener = {
-  "capture_queen.sethalf_move_mumber",
-  sethalfmove_number_cb};
+TopicListener sethalfmove_listener = {
+  "capture_queen.sethalfmove", sethalfmove_cb};
 TopicListener setwhite_ms_listener = {"capture_queen.setwhite_ms",
 				      setwhite_ms_cb};
 TopicListener setblack_ms_listener = {"capture_queen.setblack_ms",
@@ -107,7 +182,7 @@ TopicListener *TopicListeners[N_TOPIC_LISTENERS] = {
   &setturn_listener,
   &increment_listener,
   &initial_seconds_listener,
-  &sethalfmove_number_listener,
+  &sethalfmove_listener,
   &setblack_ms_listener,
   &setwhite_ms_listener
 };
@@ -117,6 +192,8 @@ void setup_wifi() {
   delay(10);
   // We start by connecting to a WiFi network
   // reset network?
+  //wifiManager.startConfigPortal("KLOK");
+  //wifiManager.resetSettings();
   wifiManager.autoConnect("CaptureQueen");
 
   Serial.println("Yay connected!");
@@ -159,8 +236,9 @@ void mqtt_publish_state(){
 }
 void mqtt_connect(){
   String str;
+  int n_try = 0;
   
-  while (!mqtt_client.connected()) {
+  while (!mqtt_client.connected() && n_try < 5) {
     if(mqtt_client.connect("ESP32Client")) {
       Serial.println("connected");
       // Once connected, publish an announcement...
@@ -168,6 +246,7 @@ void mqtt_connect(){
       subscribe();
     }
     else{
+      n_try++;
       Serial.print("Try again in 5 seconds.");
       delay(5000);
     }
@@ -271,8 +350,9 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void setup_mqtt(){
-  uint8_t mqtt_server[4] = {192, 168, 7, 130};
-  mqtt_client.setServer(mqtt_server, 1883);
+  get_mqtt_server_ip();
+  //uint8_t mqtt_server[4] = {192, 168, 7, 130};
+  mqtt_client.setServer(mqtt_ip_address, 1883);
   mqtt_client.setCallback(mqtt_callback);
   mqtt_connect();
 }
@@ -292,7 +372,7 @@ void setup(){
   pinMode(13, OUTPUT);
   digitalWrite(13, LOW);
   display_setup();
-  new_game(false);
+  new_game();
 }
 
 bool check_for_reset(){
@@ -311,7 +391,7 @@ bool check_for_reset(){
   return out;
 }
 
-void new_game(bool reset_pi){
+void new_game(){
   turn = 0;
   halfmove_number = 0;
   paused = true;
@@ -322,9 +402,7 @@ void new_game(bool reset_pi){
   display1.clear();
   delay(100);
   mqtt_publish_state();
-  if(reset_pi){
-    publish_int("capture_queen.reset_pi",  3);
-  }
+  publish_int("capture_queen.reset_pi",  3);
 }
 
 void game_over(int player){
@@ -345,7 +423,7 @@ void game_over(int player){
       delay(1);
     }
   }
-  new_game(false);
+  new_game();
 }
 
 int buttons[2] = {player_0_pin, player_1_pin};
@@ -365,6 +443,7 @@ void loop(){
       turn = halfmove_number % 2;
       if(button_state[turn] == 0){
 	paused = false;
+	last_time_ms = millis();
       }
     }
     else{
@@ -415,7 +494,7 @@ void loop(){
   }
 
   if(check_for_reset()){
-    new_game(true);
+    new_game();
   }
   display_loop();
   mqtt_client.loop();
