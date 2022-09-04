@@ -1,3 +1,6 @@
+import json
+from datetime import datetime
+from datetime import date
 import requests
 import copy
 import sys
@@ -36,7 +39,9 @@ utc_url = ('https://wyolum.com/utc_offset/utc_offset.py'
            '?dev_type=CaptureQueen.Mosquitto&'
            f'localip={localip}')
 r = requests.get(utc_url, headers={"User-Agent":"XY"})
-response = r.content.decode('utf-8')
+utc_offset_response = json.loads(r.content.decode('utf-8'))
+
+
 print('Registered mqtt server on wyolum.com')
    
 class ClockMove:
@@ -57,6 +62,76 @@ class ClockBoard:
         self.increment_seconds = increment_seconds
         self.board = chess.Board()
         self.move_stack = []
+
+    def get_result(self):
+        out = ''
+        outcome = self.outcome()
+        if outcome:
+            winner = outcome.winner
+            if winner is not None:
+                if winner == chess.WHITE:
+                    out = "1-0"
+                else:
+                    out = "0-1"
+            if len(self.move_stack) > 0:
+                last_move = self.move_stack[-1]
+                white_ms = last_move.white_ms
+                black_ms = last_move.black_ms
+                if white_ms <= 0 and black_ms > 0:
+                    out = "0-1"
+                if black_ms <= 0 and white_ms > 0:
+                    out = "1-0"
+        return out
+
+    def get_termination(self):
+        outcome = self.outcome()
+        if outcome:
+            out = str(outcome.termination).split('.')[1]
+            if len(self.move_stack) > 0:
+                last_move = self.move_stack[-1]
+                white_ms = last_move.white_ms
+                black_ms = last_move.black_ms
+                if white_ms <= 0 and black_ms > 0:
+                    out = "Time forfeit"
+                if black_ms <= 0 and white_ms > 0:
+                    out = "Time forfeit"
+        else:
+            out = 'None'
+        return out
+
+    def get_pgn(self, include_headers=True):
+        board = chess.Board()
+        moves = self.move_stack
+        
+        out = []
+
+        if include_headers:
+            lat = utc_offset_response['latitude']
+            lon = utc_offset_response['longitude']
+            result = self.get_result()
+            termination = self.get_termination()
+            time_control = f'{initial_seconds}+{increment_seconds}'
+            out.append('[Event "CaptureQueen Over-the-board chess capture"]')
+            out.append(f'''[Site "{lat},{lon}"]''')
+            out.append(f'[Date "{datetime.now().strftime("%d/%m/%y %H:%M:%S")}"]')
+            out.append('[White "{white_player}"]')
+            out.append('[Black "{black_player}"]')
+            out.append(f'[Result "{result}"]')
+            out.append(f'[Termination "{termination}"]')
+            out.append('[Annotator "CaptureQueen"]')
+            out.append(f'[TimeControl "{time_control}"]')
+            out.append('[Variant "Standard"]')
+        for i, move in enumerate(moves):
+            if i % 2 == 0:
+                out.append(f'{i // 2 + 1}.')
+            out[-1] = f'{out[-1]} {board.san(move):>6s}'
+            if i % 2 == 0:
+                out[-1] = f'{out[-1]} {{{self.move_stack[i].white_ms/1000:<7.1f}}}'
+            else:
+                out[-1] = f'{out[-1]} {{{self.move_stack[i].black_ms/1000:<7.1f}}}'
+            board.push(move)
+        return '\n'.join(out)
+    
     def set_timeout(self, white_ms, black_ms):
         legal_moves = list(self.legal_moves)
         if len(legal_moves) > 0:
@@ -65,7 +140,7 @@ class ClockBoard:
             self.move_stack.append(ClockMove(move, white_ms, black_ms))
     def outcome(self):
         return self.board.outcome()
-    def ___getattr__(self, name):
+    def __getattr__(self, name):
         return getattr(self.board, name)
     def __repr__(self):
         return self.fen()
@@ -356,12 +431,12 @@ def find_move(rect):
         
         draw_square(thresh, out[0:2], WHITE, 1)
         draw_square(thresh, out[2:4], WHITE, 1)
+
+        san = clock_board.san(chess.Move.from_uci(out))
         
         clock_board.push_uci(out, white_ms, black_ms)
-        print(clock_board.fen())
-        print(clock_board.fen(), file=open(".fen", 'w'), flush=True)
-        
-        
+        fen = clock_board.fen()
+        print(fen, file=open(".fen", 'w'), flush=True)
     return out
 
 vid = cv2.VideoCapture(0)
@@ -564,8 +639,6 @@ def read_position_image(game_id, move_number):
     return out
 
 
-next_white_ms = initial_seconds * 1000
-next_black_ms = initial_seconds * 1000
 white_ms = initial_seconds * 1000
 black_ms = initial_seconds * 1000
 while True:
@@ -582,8 +655,14 @@ while True:
                 print('going back...total moves available:',
                       len(old_board.move_stack))
             clock_move = clock_board.pop()
-            mqtt_setwhite_ms(clock_move.white_ms)
-            mqtt_setblack_ms(clock_move.black_ms)
+            if len(clock_board.move_stack) > 0:
+                white_ms = clock_board.move_stack[-1].white_ms
+                black_ms = clock_board.move_stack[-1].black_ms
+            else:
+                white_ms = initial_seconds * 1000
+                black_ms = initial_seconds * 1000
+            mqtt_setwhite_ms(white_ms)
+            mqtt_setblack_ms(black_ms)
             mqtt_sethalfmove(len(clock_board.move_stack))
         else:
             clock_move = None
@@ -605,10 +684,10 @@ while True:
             m = len(old_board.move_stack)
             if  m > n:
                 clock_move = old_board.move_stack[n]
-                if len(old_board) > n + 1:
-                    next_move = old_board.move_stack[n+1]
+                if len(old_board) > n:
+                    next_move = old_board.move_stack[n]
                 else:
-                    next_move = ClockMove('xxxx', next_white_ms, next_black_ms)
+                    next_move = ClockMove('xxxx', white_ms, black_ms)
                 clock_board.push(clock_move)
                 mqtt_setwhite_ms(next_move.white_ms)
                 mqtt_setblack_ms(next_move.black_ms)
@@ -623,15 +702,13 @@ while True:
                 
             render(renderers, clock_board, side, colors)
     if key == 'u':
-        pgn_upload.upload_to_lichess(clock_board)
+        pgn_upload.upload_to_lichess(clock_board.get_pgn())
     if 'capture_queen.turn' in mqtt_events:
         ### TODO: handle more than one event
         turn_msg = mqtt_events['capture_queen.turn'][0]
-        white_ms = next_white_ms
-        black_ms = next_black_ms
-        turn, next_white_ms, next_black_ms = map(int, turn_msg.split('//'))
-        if next_black_ms <= 0 or next_white_ms <= 0:
-            clock_board.set_timeout(next_white_ms, next_black_ms)
+        turn, white_ms, black_ms = map(int, turn_msg.split('//'))
+        if black_ms <= 0 or white_ms <= 0:
+            clock_board.set_timeout(white_ms, black_ms)
         clock_hit = True
         old_board = None
     
@@ -704,8 +781,8 @@ while True:
         update_camera_view(rect)
         render(renderers, clock_board, side, colors)
     if 'capture_queen.reset_pi' in mqtt_events:
-        next_white_ms = initial_seconds * 1000
-        next_black_ms = initial_seconds * 1000
+        white_ms = initial_seconds * 1000
+        black_ms = initial_seconds * 1000
         old_board = None
         print('restart')
         fen = clock_board.fen()
@@ -716,8 +793,8 @@ while True:
         
     if key == 'r':
         ### restart
-        next_white_ms = initial_seconds * 1000
-        next_black_ms = initial_seconds * 1000
+        white_ms = initial_seconds * 1000
+        black_ms = initial_seconds * 1000
         old_board = None
         print('restart')
         fen = clock_board.fen()
