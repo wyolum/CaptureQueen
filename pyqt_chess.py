@@ -1,8 +1,8 @@
+'''
+Continue to refresh image of .board.svg
+'''
 import time
 import os.path
-
-import chess
-import chess.svg
 
 from PyQt5.QtSvg import QSvgWidget
 from PyQt5.QtWidgets import QApplication, QWidget
@@ -42,21 +42,16 @@ class MainWindow(QWidget):
         if os.path.exists('.board.svg'):
             ctime = os.path.getctime(".board.svg")
             if ctime > self.last_ctime:
-                print('update', ctime)
                 self.last_ctime = ctime
                 svg = open('.board.svg').read().encode('UTF-8')
                 self.widgetSvg.load(svg)
         
     def keyPressEvent(self, e):
-        if e.text() == 'x':
-            self.push(chess.Move(chess.E7, chess.E5))
         if e.key() == Qt.Key_Escape:
             self.close()
             
 if __name__ == "__main__":
     app = QApplication([])
     window = MainWindow()
-    
     window.show()
-    
     app.exec()

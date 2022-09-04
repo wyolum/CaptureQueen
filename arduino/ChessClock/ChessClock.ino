@@ -55,7 +55,7 @@ struct TopicListener{
 
 void reset_cb(byte *payload, unsigned int length){
   String str_temp;
-  new_game();
+  new_game(false);
 }
 
 void pause_cb(byte *payload, unsigned int length){
@@ -278,7 +278,7 @@ void setup(){
   pinMode(13, OUTPUT);
   digitalWrite(13, LOW);
   display_setup();
-  new_game();
+  new_game(false);
 }
 
 bool check_for_reset(){
@@ -297,7 +297,7 @@ bool check_for_reset(){
   return out;
 }
 
-void new_game(){
+void new_game(bool reset_pi){
   turn = 0;
   move_number = 0;
   paused = true;
@@ -308,7 +308,9 @@ void new_game(){
   display1.clear();
   delay(100);
   mqtt_publish_state();
-  publish_int("capture_queen.reset_pi",  3);
+  if(reset_pi){
+    publish_int("capture_queen.reset_pi",  3);
+  }
 }
 
 void game_over(int player){
@@ -329,7 +331,7 @@ void game_over(int player){
       delay(1);
     }
   }
-  new_game();
+  new_game(false);
 }
 
 int buttons[2] = {player_0_pin, player_1_pin};
@@ -391,7 +393,7 @@ void loop(){
   }
 
   if(check_for_reset()){
-    new_game();
+    new_game(true);
   }
   display_loop();
   mqtt_client.loop();

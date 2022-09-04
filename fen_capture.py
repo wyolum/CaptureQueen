@@ -1,3 +1,4 @@
+import requests
 import copy
 import sys
 import argparse
@@ -11,17 +12,33 @@ import glob
 
 import chess
 from board_map import fit, predict
-from pygame_render import PygameRender
+#from pygame_render import PygameRender
 import pgn_upload
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
 from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
 from mqtt_clock_client import mqtt_sethalfmove
 
-display_on = False
+display_on = True
 def imshow(name, frame):
     if display_on:
         cv2.imshow(name, frame)
+
+### register with wyolum
+def getip():
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    return s.getsockname()[0]
+
+localip = getip()
+utc_url = ('https://wyolum.com/utc_offset/utc_offset.py'
+           '?dev_type=CaptureQueen.Mosquitto&'
+           f'localip={localip}')
+r = requests.get(utc_url, headers={"User-Agent":"XY"})
+response = r.content.decode('utf-8')
+print('Registered mqtt server on wyolum.com')
+   
 class ClockMove:
     def __init__(self, move, white_ms, black_ms):
         self.move = move
@@ -109,9 +126,9 @@ def mqtt_gather_events():
         msg = mqtt_pending_msgs.pop()
         if msg.topic not in out:
             out[msg.topic] = []
-        out[msg.topic].append(msg.payload)
-    if out:
-        print(out)
+        payload = msg.payload.decode('utf-8')
+        out[msg.topic].append(payload)
+        print(msg.topic, payload)
     return out
 
 mqtt_subscribe(on_mqtt)
@@ -133,6 +150,9 @@ parser = argparse.ArgumentParser(description=desc)
 parser.add_argument('-c','--calibrate',
                     help='Calibrate board area',
                     required=False, default=False)
+parser.add_argument('-d','--display',
+                    help='Display board area',
+                    required=False, default=False)
 parser.add_argument('-s','--shortcuts',
                     help='get gameplay command keys',
                     action="store_true")
@@ -140,6 +160,10 @@ args = parser.parse_args()
 if args.shortcuts:
     print(shortcuts)
     sys.exit()
+if args.display[0] == 'T':
+    display_on = True
+else:
+    display_on = False
 
 board_map = {}
 alg_map = {}
@@ -549,7 +573,7 @@ while True:
     mqtt_events = mqtt_gather_events()
     clock_hit = False
     # print(key)
-    if key == 'Q':
+    if key == 'Q' or 'capture_queen.goback' in mqtt_events: ### go back
         game_on = False
         mqtt_clock_pause(True)
         if len(clock_board.move_stack) > 0:
@@ -574,8 +598,8 @@ while True:
                 draw_square(im, uci[0:2], RED, 1)
                 draw_square(im, uci[2:4], RED, 1)
             
-            imshow("Previous Moves", im)
-    if key == 'S':
+            #imshow("Previous Moves", im)
+    if key == 'S' or 'capture_queen.goforward' in mqtt_events:
         if not game_on and old_board is not None:
             n = len(clock_board.move_stack)
             m = len(old_board.move_stack)
@@ -595,14 +619,14 @@ while True:
                     uci = clock_move.uci()
                     draw_square(im, uci[0:2], RED, 1)
                     draw_square(im, uci[2:4], RED, 1)
-                    imshow("Previous Moves", im)
+                    #imshow("Previous Moves", im)
                 
             render(renderers, clock_board, side, colors)
     if key == 'u':
         pgn_upload.upload_to_lichess(clock_board)
     if 'capture_queen.turn' in mqtt_events:
         ### TODO: handle more than one event
-        turn_msg = str(mqtt_events['capture_queen.turn'][0])[2:-1]
+        turn_msg = mqtt_events['capture_queen.turn'][0]
         white_ms = next_white_ms
         black_ms = next_black_ms
         turn, next_white_ms, next_black_ms = map(int, turn_msg.split('//'))

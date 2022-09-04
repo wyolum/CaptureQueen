@@ -1,5 +1,6 @@
 '''
 Used to display game on local mqtt network
+-- write board.svg file displying current position and last move
 '''
 import chess
 import chess.svg
@@ -27,11 +28,11 @@ class MqttMessageHandler:
     def on_message(self, client, userdata, msg):
         topic = msg.topic
         subtopic = topic.split('.')[1]
-        print(topic, msg.payload)
+        print(topic) # , msg.payload)
         if subtopic == 'reset':
             self.board = chess.Board()
         if subtopic == 'position':
-            payload = str(msg.payload)[2:-1]
+            payload = msg.payload.decode('utf-8')
             lastmove, fen = payload.split('//')
             if lastmove != 'None':
                 lastmove = chess.Move(chess.parse_square(lastmove[:2]),
@@ -43,17 +44,7 @@ class MqttMessageHandler:
                                   lastmove=lastmove,
                                   colors=self.colors)
             open(".board.svg", 'w').write(svg)
-            print('wrote .board.svg')
-
-def old_on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload))
-    if msg.topic == 'capture_queen.fen':
-        fen = str(msg.payload)[2:-1]
-        board = chess.Board(fen)
-        svg = chess.svg.board(board,size=640, flipped=False,
-                              colors=defaults.colors)
-        open(".board.svg", 'w').write(svg)
-        #pgr.render(board, False, colors=defaults.colors)
+            #print('wrote .board.svg')
 
 client = mqtt.Client()
 handler = MqttMessageHandler()

@@ -12,9 +12,9 @@ def on_connect(client, userdata, flags, rc):
     # reconnect then subscriptions will be renewed.
     client.subscribe("capture_queen.turn")
     client.subscribe("capture_queen.reset_pi")
-    #publish.single(group + '.initial', "300", hostname="localhost")
-    #publish.single(group + '.increment', "3", hostname="localhost")
-    #publish.single(group + '.reset', "1", hostname="localhost")
+    client.subscribe("capture_queen.position")
+    client.subscribe("capture_queen.goback")
+    client.subscribe("capture_queen.goforward")
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
@@ -35,8 +35,17 @@ client.connect("localhost", 1883, keepalive=60)
 #publish.single(group + '.reset_clock', "", hostname="localhost")
 
 def mqtt_start():
+    ### non-blocking threaded mqtt loop
     client.loop_start()
 
+def mqtt_goback():
+    payload = 1
+    publish.single(group + '.goback', payload, hostname="localhost")
+
+def mqtt_goforward():
+    payload = 1
+    publish.single(group + '.goforward', payload, hostname="localhost")
+    
 subscribers = []
 def mqtt_subscribe(callback):
     subscribers.append(callback)

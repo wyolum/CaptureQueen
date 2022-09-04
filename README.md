@@ -88,3 +88,4 @@ Power the clock and wait for LEDs to display.
 
 1. https://github.com/karayaman/Play-online-chess-with-real-chess-board
 1. https://pypi.org/project/chess/
+1. https://gist.github.com/docPhil99/ca4da12c9d6f29b9cea137b617c7b8b1
