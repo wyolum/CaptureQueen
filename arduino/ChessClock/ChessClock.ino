@@ -10,7 +10,7 @@ long initial_seconds = 5;
 long increment_seconds = 5;
 long counter_ms[2] = {initial_seconds * 1000, initial_seconds * 1000};
 long counter_seconds[2];
-int move_number = 0;
+int halfmove_number = 0;
 
 const int WHITE = 0;
 const int BLACK = 1;
@@ -66,6 +66,10 @@ void setturn_cb(byte *payload, unsigned int length){
   turn = bytes2int(payload, length);
 }
 
+void sethalfmove_number_cb(byte *payload, unsigned int length){
+  halfmove_number = bytes2int(payload, length);
+}
+
 void setwhite_ms_cb(byte *payload, unsigned int length){
   counter_ms[players[WHITE]] = bytes2int(payload, length);
 }
@@ -84,19 +88,29 @@ void set_increment_cb(byte *payload, unsigned int length){
 TopicListener reset_listener = {"capture_queen.reset", reset_cb};
 TopicListener pause_listener = {"capture_queen.paused", pause_cb};
 TopicListener setturn_listener = {"capture_queen.setturn", setturn_cb};
-TopicListener setwhite_ms_listener = {"capture_queen.setwhite_ms", setwhite_ms_cb};
-TopicListener setblack_ms_listener = {"capture_queen.setblack_ms", setblack_ms_cb};
-TopicListener increment_listener = {"capture_queen.increment_seconds", set_increment_cb};
-TopicListener initial_seconds_listener = {"capture_queen.initial_seconds", set_initial_seconds_cb};
+TopicListener sethalfmove_number_listener = {
+  "capture_queen.sethalf_move_mumber",
+  sethalfmove_number_cb};
+TopicListener setwhite_ms_listener = {"capture_queen.setwhite_ms",
+				      setwhite_ms_cb};
+TopicListener setblack_ms_listener = {"capture_queen.setblack_ms",
+				      setblack_ms_cb};
+TopicListener increment_listener = {"capture_queen.increment_seconds",
+				    set_increment_cb};
+TopicListener initial_seconds_listener = {"capture_queen.initial_seconds",
+					  set_initial_seconds_cb};
 
-const int N_TOPIC_LISTENERS = 7;
-TopicListener *TopicListeners[N_TOPIC_LISTENERS] = {&reset_listener,
-						    &pause_listener,
-						    &setturn_listener,
-						    &increment_listener,
-						    &initial_seconds_listener,
-						    &setblack_ms_listener,
-						    &setwhite_ms_listener};
+const int N_TOPIC_LISTENERS = 8;
+TopicListener *TopicListeners[N_TOPIC_LISTENERS] = {
+  &reset_listener,
+  &pause_listener,
+  &setturn_listener,
+  &increment_listener,
+  &initial_seconds_listener,
+  &sethalfmove_number_listener,
+  &setblack_ms_listener,
+  &setwhite_ms_listener
+};
 
 void setup_wifi() {
   //wifiManager.resetSettings(); // uncomment to forget network settings
@@ -299,7 +313,7 @@ bool check_for_reset(){
 
 void new_game(bool reset_pi){
   turn = 0;
-  move_number = 0;
+  halfmove_number = 0;
   paused = true;
   for(int i = 0; i < 2; i++){
     counter_ms[i] = initial_seconds * 1000;
@@ -347,32 +361,40 @@ void loop(){
   if(paused){ // game paused... unpause game, start other timer
     button_state[0] = digitalRead(player_0_pin);
     button_state[1] = digitalRead(player_1_pin);
-    if(button_state[0] == 0){
-      paused = false;
-      players[0] = BLACK; // player 0 is black
-      players[1] = WHITE; // player 1 is white
-      Serial.println("Game on!");
-      turn = 1;
-      last_time_ms = millis();
-      mqtt_publish_state();
-      //counter_ms[players[turn]] -= increment_seconds * 1000;
+    if(halfmove_number > 0){ // only check one button for current player
+      turn = halfmove_number % 2;
+      if(button_state[turn] == 0){
+	paused = false;
+      }
     }
-    else if(button_state[1] == 0){
-      paused = false;
-      players[0] = WHITE; // player 0 is white
-      players[1] = BLACK; // player 1 is black
-      Serial.println("Game on!");
-      turn = 0;
-      last_time_ms = millis();
-      mqtt_publish_state();
-      // pre-subtract off increment.. will get added when move starts
-      //counter_ms[players[turn]] -= increment_seconds * 1000;
+    else{
+      if(button_state[0] == 0){
+	paused = false;
+	players[0] = BLACK; // player 0 is black
+	players[1] = WHITE; // player 1 is white
+	Serial.println("Game on!");
+	turn = 1;
+	last_time_ms = millis();
+	mqtt_publish_state();
+	//counter_ms[players[turn]] -= increment_seconds * 1000;
+      }
+      else if(button_state[1] == 0){
+	paused = false;
+	players[0] = WHITE; // player 0 is white
+	players[1] = BLACK; // player 1 is black
+	Serial.println("Game on!");
+	turn = 0;
+	last_time_ms = millis();
+	mqtt_publish_state();
+	// pre-subtract off increment.. will get added when move starts
+	//counter_ms[players[turn]] -= increment_seconds * 1000;
+      }
     }
   }
-  else{
-    move_number++;
+  if(!paused){// can't use 'else' since players can unpause game above
+    halfmove_number++;
     if(digitalRead(buttons[turn]) == 0){
-      if(move_number > 1){
+      if(halfmove_number > 1){
 	counter_ms[turn] += increment_seconds * 1000;
       }
       
