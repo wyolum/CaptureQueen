@@ -1,3 +1,5 @@
+
+from collections import defaultdict
 import json
 from datetime import datetime
 from datetime import date
@@ -22,6 +24,8 @@ from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
 from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
 from mqtt_clock_client import mqtt_sethalfmove
 
+import chess_db
+
 display_on = True
 def imshow(name, frame):
     if display_on:
@@ -40,7 +44,8 @@ utc_url = ('https://wyolum.com/utc_offset/utc_offset.py'
            f'localip={localip}')
 r = requests.get(utc_url, headers={"User-Agent":"XY"})
 utc_offset_response = json.loads(r.content.decode('utf-8'))
-
+white_player = '{white_player}'
+black_player = '{black_player}'
 
 print('Registered mqtt server on wyolum.com')
    
@@ -55,14 +60,31 @@ class ClockMove:
         return f'{self.uci()}//{self.white_ms}//{self.black_ms}'
     def uci(self):
         return self.move.uci()
-    
+
 class ClockBoard:
     def __init__(self, initial_seconds, increment_seconds):
         self.initial_seconds = initial_seconds
         self.increment_seconds = increment_seconds
         self.board = chess.Board()
         self.move_stack = []
+        self.headers = defaultdict(lambda :"?")
+        self.start_time = datetime.now()
+        datestr = self.start_time.strftime("%d/%m/%y %H:%M:%S")
+        self.gameid = chess_db.get_gameid(datestr)
+        self.headers['Date'] = datestr
 
+        region = utc_offset_response['region']
+        city = utc_offset_response['city']
+        time_control = f'{initial_seconds}+{increment_seconds}'
+        self.headers['Event'] =  'CaptureQueen Over-the-board chess capture'
+        self.headers['Site'] = f'{city},{region}'
+        self.headers['White'] = f'{white_player}'
+        self.headers['Black'] = f'{black_player}'
+        self.headers['Annotator'] = 'CaptureQueen'
+        self.headers['TimeControl'] = f'{time_control}'
+        self.headers['Variant'] = 'Standard'
+        chess_db.update_game(self.gameid, self.headers)
+        
     def get_result(self):
         out = ''
         outcome = self.outcome()
@@ -99,38 +121,13 @@ class ClockBoard:
             out = 'None'
         return out
 
-    def get_pgn(self, include_headers=True):
+    def get_pgn(self):
         board = chess.Board()
         moves = self.move_stack
-        
-        out = []
-
-        if include_headers:
-            lat = utc_offset_response['latitude']
-            lon = utc_offset_response['longitude']
-            result = self.get_result()
-            termination = self.get_termination()
-            time_control = f'{initial_seconds}+{increment_seconds}'
-            out.append('[Event "CaptureQueen Over-the-board chess capture"]')
-            out.append(f'''[Site "{lat},{lon}"]''')
-            out.append(f'[Date "{datetime.now().strftime("%d/%m/%y %H:%M:%S")}"]')
-            out.append('[White "{white_player}"]')
-            out.append('[Black "{black_player}"]')
-            out.append(f'[Result "{result}"]')
-            out.append(f'[Termination "{termination}"]')
-            out.append('[Annotator "CaptureQueen"]')
-            out.append(f'[TimeControl "{time_control}"]')
-            out.append('[Variant "Standard"]')
-        for i, move in enumerate(moves):
-            if i % 2 == 0:
-                out.append(f'{i // 2 + 1}.')
-            out[-1] = f'{out[-1]} {board.san(move):>6s}'
-            if i % 2 == 0:
-                out[-1] = f'{out[-1]} {{{self.move_stack[i].white_ms/1000:<7.1f}}}'
-            else:
-                out[-1] = f'{out[-1]} {{{self.move_stack[i].black_ms/1000:<7.1f}}}'
-            board.push(move)
-        return '\n'.join(out)
+        self.headers['Result'] = self.get_result()
+        self.headers['Termination'] = self.get_termination()
+        chess_db.update_game(self.gameid, self.headers)
+        return chess_db.get_pgn(self.gameid)
     
     def set_timeout(self, white_ms, black_ms):
         legal_moves = list(self.legal_moves)
@@ -156,7 +153,14 @@ class ClockBoard:
         return self.board.fen()
     
     def push(self, clock_move):
+        san = self.san(clock_move)
         self.move_stack.append(clock_move)
+        ply = self.ply()
+        if ply % 2 == chess.WHITE:
+            ms = clock_move.white_ms
+        else:
+            ms = clock_move.black_ms
+        chess_db.move(self.gameid, ply, f'{san:>6s} {{{ms:<7.1f}}}')
         return self.board.push(clock_move.move)
 
     def push_uci(self, uci, white_ms, black_ms):
@@ -227,7 +231,7 @@ parser.add_argument('-c','--calibrate',
                     required=False, default=False)
 parser.add_argument('-d','--display',
                     help='Display board area',
-                    required=False, default=False)
+                    required=False, default=True)
 parser.add_argument('-s','--shortcuts',
                     help='get gameplay command keys',
                     action="store_true")
@@ -235,7 +239,7 @@ args = parser.parse_args()
 if args.shortcuts:
     print(shortcuts)
     sys.exit()
-if args.display[0] == 'T':
+if args.display:
     display_on = True
 else:
     display_on = False
@@ -432,8 +436,6 @@ def find_move(rect):
         draw_square(thresh, out[0:2], WHITE, 1)
         draw_square(thresh, out[2:4], WHITE, 1)
 
-        san = clock_board.san(chess.Move.from_uci(out))
-        
         clock_board.push_uci(out, white_ms, black_ms)
         fen = clock_board.fen()
         print(fen, file=open(".fen", 'w'), flush=True)
