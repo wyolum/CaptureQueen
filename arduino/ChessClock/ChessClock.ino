@@ -132,6 +132,11 @@ void reset_cb(byte *payload, unsigned int length){
   new_game();
 }
 
+void game_over_cb(byte *payload, unsigned int length){
+  String str_temp;
+  game_over();
+}
+
 void pause_cb(byte *payload, unsigned int length){
   paused = bytes2int(payload, length);
 }
@@ -159,6 +164,7 @@ void set_initial_seconds_cb(byte *payload, unsigned int length){
 void set_increment_cb(byte *payload, unsigned int length){
   increment_seconds = bytes2int(payload, length);
 }
+TopicListener game_over_listener = {"capture_queen.game_over", game_over_cb};
 TopicListener reset_listener = {"capture_queen.reset", reset_cb};
 TopicListener pause_listener = {"capture_queen.paused", pause_cb};
 TopicListener setturn_listener = {"capture_queen.setturn", setturn_cb};
@@ -173,8 +179,9 @@ TopicListener increment_listener = {"capture_queen.increment_seconds",
 TopicListener initial_seconds_listener = {"capture_queen.initial_seconds",
 					  set_initial_seconds_cb};
 
-const int N_TOPIC_LISTENERS = 8;
+const int N_TOPIC_LISTENERS = 9;
 TopicListener *TopicListeners[N_TOPIC_LISTENERS] = {
+  &game_over_listener,
   &reset_listener,
   &pause_listener,
   &setturn_listener,
@@ -286,7 +293,7 @@ void display_loop(){
   counter_seconds[0] = counter_ms[0] / 1000;
   counter_seconds[1] = counter_ms[1] / 1000;
 
-  if(counter_ms[0] >= 10000){
+  if(counter_ms[0] >= 60000){
     if(counter_seconds[0] >= 3600){ // display hh:mm
       int colen = (millis() % 1000 < 500) * 0x40;
       if(turn != 0){ // keep other colen steady on
@@ -303,11 +310,10 @@ void display_loop(){
     }
   }
   else{
-    display0.setSegments(ZEROS, 1, 0);
     display0.setSegments(ZEROS, 1, 3);
-    display0.showNumberDecEx((counter_ms[0] / 100), 0xFF, true, 2, 1);
+    display0.showNumberDecEx((counter_ms[0] / 100), 0xFF, false, 3, 0);
   }
-  if(counter_ms[1] >= 10000){
+  if(counter_ms[1] >= 60000){
     if(counter_seconds[1] >= 3600){ // display hh:mm
       int colen = (millis() % 1000 < 500) * 0x40;
       if(turn != 1){ // keep other colen steady on
@@ -324,9 +330,8 @@ void display_loop(){
     }
   }
   else{
-    display1.setSegments(ZEROS, 1, 0);
     display1.setSegments(ZEROS, 1, 3);
-    display1.showNumberDecEx((counter_ms[1] / 100), 0xFF, true, 2, 1);
+    display1.showNumberDecEx((counter_ms[1] / 100), 0xFF, false, 3, 0);
   }
 }
 
@@ -407,23 +412,16 @@ void new_game(){
   publish_int("capture_queen.reset_pi",  3);
 }
 
-void game_over(int player){
+void game_over(){
   mqtt_publish_state();
-  Serial.print("Time ran out for");
-  Serial.println(player);
-  Serial.println(counter_ms[player] / 1000);
-  Serial.println();
-  if(player == 0){
+  if(counter_ms[0] < 0){
     display0.showNumberDecEx(0, 0xFF, true, 4, 0);
-    while(!check_for_reset()){
-      delay(1);
-    }
   }
-  else{
+  if(counter_ms[1] < 0){
     display1.showNumberDecEx(0, 0xFF, true, 4, 0);
-    while(!check_for_reset()){
-      delay(1);
-    }
+  }
+  while(!check_for_reset()){
+    delay(1);
   }
   new_game();
 }
@@ -489,10 +487,10 @@ void loop(){
     last_time_ms = now_ms;
   }
   if (counter_ms[0] < 0){
-    game_over(0);
+    game_over();
   }
   if (counter_ms[1] < 0){
-    game_over(1);
+    game_over();
   }
 
   if(check_for_reset()){
