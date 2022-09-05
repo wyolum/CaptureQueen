@@ -24,6 +24,7 @@ from mqtt_clock_client import mqtt_sethalfmove
 import pgn_upload
 import chess_db
 from board_map import fit, predict
+import kicker
 import defaults
 
 desc = 'Capture Queen: Over-the-board real-time chess capture system.'
@@ -38,14 +39,14 @@ During game play, these keys are active:
   right to go back a move
    left to go forward a move
 '''
-    
+
 parser = argparse.ArgumentParser(description=desc)
 parser.add_argument('-c','--calibrate',
                     help='Calibrate board area',
                     required=False, default=False)
 parser.add_argument('-d','--display',
                     help='Display board area',
-                    required=False, default=True)
+                    required=False, default="True")
 parser.add_argument('-s','--shortcuts',
                     help='get gameplay command keys',
                     action="store_true")
@@ -62,16 +63,14 @@ args = parser.parse_args()
 if args.shortcuts:
     print(shortcuts)
     sys.exit()
-if args.display:
-    display_on = True
-else:
-    display_on = False
+
+display_on = args.display == "True"
+
 white_player = args.white
 black_player = args.black
 time_control = args.time_control
 initial_seconds, increment_seconds = map(int, time_control.split('+'))
 
-display_on = True
 def imshow(name, frame):
     if display_on:
         cv2.imshow(name, frame)
@@ -205,7 +204,7 @@ class ClockBoard:
             ms = clock_move.white_ms
         else:
             ms = clock_move.black_ms
-        chess_db.move(self.gameid, ply, f'{san:>6s} {{{ms:<7.1f}}}')
+        chess_db.move(self.gameid, ply, f'{san:>7s} {{{ms/1000:<7.1f}}}')
         return self.board.push(clock_move.move)
 
     def push_uci(self, uci, white_ms, black_ms):
@@ -532,6 +531,8 @@ if args.calibrate:
 else:
     print("Skipping calibration")
 
+kicker.kick('pyqt_mqtt_chess.py')
+    
 perspective_matrix = np.load(cal_npz)['perspective_matrix']
 
 game_on = False
