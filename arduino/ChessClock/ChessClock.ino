@@ -38,7 +38,6 @@ void parse_ip(String s, uint8_t* int4){
   for(int i=0; i<4; i++){
     stop = s.indexOf('.', start);
     substr = s.substring(start, stop);
-    Serial.println(substr);
     int4[i] = (uint8_t)substr.toInt();
     start = stop + 1;
   }
@@ -88,18 +87,17 @@ void get_mqtt_server_ip(){
       Serial.println(payload);
       payload.replace(" ", "");
       String mqtt_ip_str = jsonLookup(payload, String("mqtt_ip_address"));
-      Serial.println(mqtt_ip_str);
       parse_ip(mqtt_ip_str, mqtt_ip_address);
       for(int ii=0; ii<4; ii++){
 	Serial.print(mqtt_ip_address[ii]);
 	if(ii < 3){
-	Serial.print(".");
+	  Serial.print(".");
 	}
       }
       Serial.println();
     }
     else{
-      Serial.println("No timezone found");
+      Serial.println("No mqtt service found");
     }
   }
 }
@@ -234,12 +232,13 @@ void mqtt_publish_state(){
     String(counter_ms[players[BLACK]]);
   publish_msg("capture_queen.turn",  msg.c_str());
 }
-void mqtt_connect(){
+bool mqtt_connect(){
   String str;
   int n_try = 0;
+  int max_tries = 3;
   
-  while (!mqtt_client.connected() && n_try < 5) {
-    if(mqtt_client.connect("ESP32Client")) {
+  while (!mqtt_client.connected() && n_try < max_tries) {
+    if(mqtt_client.connect("ChessClock")) {
       Serial.println("connected");
       // Once connected, publish an announcement...
       // ... and resubscribe
@@ -247,7 +246,10 @@ void mqtt_connect(){
     }
     else{
       n_try++;
-      Serial.print("Try again in 5 seconds.");
+      Serial.print("Try again in 5 seconds. ");
+      Serial.print(n_try);
+      Serial.print("/");
+      Serial.println(max_tries);
       delay(5000);
     }
   }
@@ -258,7 +260,7 @@ void mqtt_reconnect() {
   while (!mqtt_client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (mqtt_client.connect("ESP32Client")) {
+    if (mqtt_client.connect("ChessClock")) {
       Serial.println("connected");
       // Once connected, publish an announcement...
       // ... and resubscribe
