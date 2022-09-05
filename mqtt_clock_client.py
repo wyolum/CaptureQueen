@@ -15,6 +15,8 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe("capture_queen.position")
     client.subscribe("capture_queen.goback")
     client.subscribe("capture_queen.goforward")
+    client.subscribe("capture_queen.quit")
+    client.subscribe("capture_queen.resign")
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
@@ -45,6 +47,18 @@ def mqtt_goback():
 def mqtt_goforward():
     payload = 1
     publish.single(group + '.goforward', payload, hostname="localhost")
+
+def mqtt_resign(color):
+    payload = color
+    publish.single(group + '.resign', payload, hostname="localhost")
+
+def mqtt_game_over(result):
+    payload = result
+    publish.single(group + '.game_over', payload, hostname="localhost")
+    
+def mqtt_quit():
+    payload = 1
+    publish.single(group + '.quit', payload, hostname="localhost")
     
 subscribers = []
 def mqtt_subscribe(callback):

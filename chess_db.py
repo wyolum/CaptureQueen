@@ -115,7 +115,10 @@ def get_pgn(gameid):
     cur = db.execute(sql)
     for ply, clockmove in cur.fetchall():
         if ply % 2 == 0: ## white, new row
-            out.append(f'{ply//2 + 1}. ')
+            if 'resigns' in clockmove:
+                pass
+            else:
+                out.append(f'{ply//2 + 1}. ')
         out[-1] = out[-1] + f'{clockmove} '
     return '\n'.join(out)
 

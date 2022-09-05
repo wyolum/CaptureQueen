@@ -19,7 +19,7 @@ import chess
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
 from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
-from mqtt_clock_client import mqtt_sethalfmove
+from mqtt_clock_client import mqtt_sethalfmove, mqtt_game_over
 
 import pgn_upload
 import chess_db
@@ -107,6 +107,8 @@ class ClockBoard:
     def __init__(self, initial_seconds, increment_seconds):
         self.initial_seconds = initial_seconds
         self.increment_seconds = increment_seconds
+        self.__resign = None
+        
         self.board = chess.Board()
         self.move_stack = []
         self.headers = defaultdict(lambda :"?")
@@ -126,11 +128,38 @@ class ClockBoard:
         self.headers['TimeControl'] = f'{time_control}'
         self.headers['Variant'] = 'Standard'
         chess_db.update_game(self.gameid, self.headers)
+
+    def resign(self, color):
+        self.__resign = color
+        if color == chess.WHITE:
+            color = 'White'
+            if len(self.move_stack) > 0:
+                ms = self.move_stack[-1].white_ms
+            else:
+                ms = self.initial_seconds * 1000
+        elif color == chess.BLACK:
+            color = 'Black'
+            if len(self.move_stack) > 0:
+                ms = self.move_stack[-1].black_ms
+            else:
+                ms = self.initial_seconds * 1000
+        else:
+            raise ValueError(f'Unknown color "{color}"')
+        result = self.get_result()
+        chess_db.move(self.gameid, self.ply(), f'{{{color} resigns.}} {{{ms/1000:<7.1f}}} {result}')
+        mqtt_game_over(result)
+        pgn_upload.upload_to_lichess(self.get_pgn())
+
         
     def get_result(self):
         out = ''
         outcome = self.outcome()
-        if outcome:
+        if self.__resign is not None:
+            if self.__resign == chess.WHITE:
+                out = '0-1'
+            elif self.__resign == chess.BLACK:
+                out = '1-0'
+        elif outcome:
             winner = outcome.winner
             if winner is not None:
                 if winner == chess.WHITE:
@@ -149,7 +178,9 @@ class ClockBoard:
 
     def get_termination(self):
         outcome = self.outcome()
-        if outcome:
+        if self.__resign is not None:
+            out = 'Normal'
+        elif outcome:
             out = str(outcome.termination).split('.')[1]
             if len(self.move_stack) > 0:
                 last_move = self.move_stack[-1]
@@ -162,9 +193,6 @@ class ClockBoard:
         else:
             out = 'None'
         return out
-
-    def outcome(self):
-        return self.board.outcome()
 
     def get_pgn(self):
         board = chess.Board()
@@ -696,7 +724,12 @@ while True:
         bbox = get_board_bbox().astype(int)
         cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
         update_camera_view(rectified)
-    if key == 'q':
+    if 'capture_queen.resign' in mqtt_events:
+        color = mqtt_events['capture_queen.resign'][0] == 'True'
+        clock_board.resign(color)
+        mqtt_clock_pause(True)
+        
+    if key == 'q' or 'capture_queen.quit' in mqtt_events:
         break
     if key == 'x' or clock_hit:
         if not game_on:
