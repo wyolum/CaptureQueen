@@ -1,3 +1,7 @@
+from collections import defaultdict
+import json
+from datetime import datetime
+from datetime import date
 import requests
 import copy
 import sys
@@ -9,15 +13,63 @@ import re
 import numpy as np
 import cv2
 import glob
-
 import chess
-from board_map import fit, predict
-#from pygame_render import PygameRender
-import pgn_upload
+
+
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
 from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
 from mqtt_clock_client import mqtt_sethalfmove
+
+import pgn_upload
+import chess_db
+from board_map import fit, predict
+import defaults
+
+desc = 'Capture Queen: Over-the-board real-time chess capture system.'
+shortcuts = '''\
+During game play, these keys are active:
+    's' to swap colors
+    'f' to flip sides
+    'r' to reset to new game
+    'q' to quit
+    'x' to make move
+    'u' to upload to lichess
+  right to go back a move
+   left to go forward a move
+'''
+    
+parser = argparse.ArgumentParser(description=desc)
+parser.add_argument('-c','--calibrate',
+                    help='Calibrate board area',
+                    required=False, default=False)
+parser.add_argument('-d','--display',
+                    help='Display board area',
+                    required=False, default=True)
+parser.add_argument('-s','--shortcuts',
+                    help='get gameplay command keys',
+                    action="store_true")
+parser.add_argument('-w','--white',
+                    help='white player name (lichess id)',
+                    required=False, default="{white_player}")
+parser.add_argument('-b','--black',
+                    help='black player name (lichess id)',
+                    required=False, default="{black_player}")
+parser.add_argument('-t','--time_control',
+                    help='Time control seconds+increment',
+                    required=False, default=defaults.time_control)
+args = parser.parse_args()
+if args.shortcuts:
+    print(shortcuts)
+    sys.exit()
+if args.display:
+    display_on = True
+else:
+    display_on = False
+white_player = args.white
+black_player = args.black
+time_control = args.time_control
+initial_seconds, increment_seconds = map(int, time_control.split('+'))
 
 display_on = True
 def imshow(name, frame):
@@ -36,8 +88,9 @@ utc_url = ('https://wyolum.com/utc_offset/utc_offset.py'
            '?dev_type=CaptureQueen.Mosquitto&'
            f'localip={localip}')
 r = requests.get(utc_url, headers={"User-Agent":"XY"})
-response = r.content.decode('utf-8')
-print('Registered mqtt server on wyolum.com')
+utc_offset_response = json.loads(r.content.decode('utf-8'))
+
+print('Registered mqtt server with wyolum.com')
    
 class ClockMove:
     def __init__(self, move, white_ms, black_ms):
@@ -50,22 +103,86 @@ class ClockMove:
         return f'{self.uci()}//{self.white_ms}//{self.black_ms}'
     def uci(self):
         return self.move.uci()
-    
+
 class ClockBoard:
     def __init__(self, initial_seconds, increment_seconds):
         self.initial_seconds = initial_seconds
         self.increment_seconds = increment_seconds
         self.board = chess.Board()
         self.move_stack = []
+        self.headers = defaultdict(lambda :"?")
+        self.start_time = datetime.now()
+        datestr = self.start_time.strftime("%d/%m/%y %H:%M:%S")
+        self.gameid = chess_db.get_gameid(datestr)
+        self.headers['Date'] = datestr
+
+        region = utc_offset_response['region']
+        city = utc_offset_response['city']
+        time_control = f'{initial_seconds}+{increment_seconds}'
+        self.headers['Event'] =  'CaptureQueen Over-the-board chess capture'
+        self.headers['Site'] = f'{city},{region}'
+        self.headers['White'] = f'{white_player}'
+        self.headers['Black'] = f'{black_player}'
+        self.headers['Annotator'] = 'CaptureQueen'
+        self.headers['TimeControl'] = f'{time_control}'
+        self.headers['Variant'] = 'Standard'
+        chess_db.update_game(self.gameid, self.headers)
+        
+    def get_result(self):
+        out = ''
+        outcome = self.outcome()
+        if outcome:
+            winner = outcome.winner
+            if winner is not None:
+                if winner == chess.WHITE:
+                    out = "1-0"
+                else:
+                    out = "0-1"
+            if len(self.move_stack) > 0:
+                last_move = self.move_stack[-1]
+                white_ms = last_move.white_ms
+                black_ms = last_move.black_ms
+                if white_ms <= 0 and black_ms > 0:
+                    out = "0-1"
+                if black_ms <= 0 and white_ms > 0:
+                    out = "1-0"
+        return out
+
+    def get_termination(self):
+        outcome = self.outcome()
+        if outcome:
+            out = str(outcome.termination).split('.')[1]
+            if len(self.move_stack) > 0:
+                last_move = self.move_stack[-1]
+                white_ms = last_move.white_ms
+                black_ms = last_move.black_ms
+                if white_ms <= 0 and black_ms > 0:
+                    out = "Time forfeit"
+                if black_ms <= 0 and white_ms > 0:
+                    out = "Time forfeit"
+        else:
+            out = 'None'
+        return out
+
+    def outcome(self):
+        return self.board.outcome()
+
+    def get_pgn(self):
+        board = chess.Board()
+        moves = self.move_stack
+        self.headers['Result'] = self.get_result()
+        self.headers['Termination'] = self.get_termination()
+        chess_db.update_game(self.gameid, self.headers)
+        return chess_db.get_pgn(self.gameid)
+    
     def set_timeout(self, white_ms, black_ms):
         legal_moves = list(self.legal_moves)
         if len(legal_moves) > 0:
             ### make dummy move to complete game with time forfiet
             move = legal_moves[0]
             self.move_stack.append(ClockMove(move, white_ms, black_ms))
-    def outcome(self):
-        return self.board.outcome()
-    def ___getattr__(self, name):
+
+    def __getattr__(self, name):
         return getattr(self.board, name)
     def __repr__(self):
         return self.fen()
@@ -81,7 +198,14 @@ class ClockBoard:
         return self.board.fen()
     
     def push(self, clock_move):
+        san = self.san(clock_move)
         self.move_stack.append(clock_move)
+        ply = self.ply()
+        if ply % 2 == chess.WHITE:
+            ms = clock_move.white_ms
+        else:
+            ms = clock_move.black_ms
+        chess_db.move(self.gameid, ply, f'{san:>6s} {{{ms:<7.1f}}}')
         return self.board.push(clock_move.move)
 
     def push_uci(self, uci, white_ms, black_ms):
@@ -93,28 +217,16 @@ class ClockBoard:
         self.board.pop() ### keep in sync
         return self.move_stack.pop()
     
-    @property
-    def legal_moves(self):
-        return self.board.legal_moves
-    
-    def is_castling(self, move):
-        return self.board.is_castling(move)
-    
-    def is_en_passant(self, move):
-        return self.board.is_en_passant(move)
-
     def copy(self):
         out = ClockBoard(self.initial_seconds, self.increment_seconds)
         out.board = self.board.copy()
         out.move_stack = copy.copy(self.move_stack)
+        out.headers = self.headers
         return out
 
 for file in glob.glob('captures/*.png'):
     os.remove(file)
 game_id = 0
-
-initial_seconds = 300
-increment_seconds = 0
 
 mqtt_pending_msgs = []
 def on_mqtt(msg):
@@ -128,74 +240,11 @@ def mqtt_gather_events():
             out[msg.topic] = []
         payload = msg.payload.decode('utf-8')
         out[msg.topic].append(payload)
-        print(msg.topic, payload)
+        #print(msg.topic, payload)
     return out
 
 mqtt_subscribe(on_mqtt)
 mqtt_start()
-
-
-desc = 'Capture Queen: Over-the-board real-time chess capture system.'
-shortcuts = '''\
-During game play, these keys are active:
-    's' to swap colors
-    'f' to flip sides
-    'r' to reset to new game
-    'q' to quit
-    'x' to make move
-    'u' to upload to lichess
-'''
-    
-parser = argparse.ArgumentParser(description=desc)
-parser.add_argument('-c','--calibrate',
-                    help='Calibrate board area',
-                    required=False, default=False)
-parser.add_argument('-d','--display',
-                    help='Display board area',
-                    required=False, default=False)
-parser.add_argument('-s','--shortcuts',
-                    help='get gameplay command keys',
-                    action="store_true")
-args = parser.parse_args()
-if args.shortcuts:
-    print(shortcuts)
-    sys.exit()
-if args.display[0] == 'T':
-    display_on = True
-else:
-    display_on = False
-
-board_map = {}
-alg_map = {}
-order = []
-ii = 0
-
-hori_vanish_id = -1
-vert_vanish_id = -2
-righ_vanish_id = -3
-left_vanish_id = -4
-
-board_map[hori_vanish_id] = ['h-', None, None]
-board_map[vert_vanish_id] = ['v-', None, None]
-board_map[left_vanish_id] = ['l-', None, None]
-board_map[righ_vanish_id] = ['r-', None, None]
-
-alg_map['h-'] = hori_vanish_id
-alg_map['v-'] = vert_vanish_id
-alg_map['l-'] = left_vanish_id
-alg_map['r-'] = righ_vanish_id
-
-for row in range(8):
-    for col in range(8):
-        letter = chr(col + ord('a'))
-        number = row + 1
-        val = (7 - row) * 8 + col
-        alg = f'{letter}{number}'
-        board_map[val] = [alg, None, None] # alg, box, center
-        alg_map[alg] = val
-        order.append((alg, ii))
-        # print(alg, ii)
-        ii += 1
 
 def get_board_bbox():
     delta = IM_HEIGHT / 9
@@ -232,34 +281,30 @@ def get_bbox(alg):
     bbox = get_abs_bbox(i, j)
     return bbox
 
-def draw_abs_square(rect, i, j, color, thickness):
+def draw_abs_square(rectified, i, j, color, thickness):
     bbox = get_abs_bbox(i, j)
-    cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
+    cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
     
-def draw_square(rect, alg, color, thickness):
+def draw_square(rectified, alg, color, thickness):
     bbox = get_bbox(alg)
-    cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
+    cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
 
-def crop_abs_square(rect, i, j):
+def crop_abs_square(rectified, i, j):
     bbox = get_abs_bbox(i, j)
     starts = np.min(bbox, axis=0).astype(int)
     stops = np.max(bbox, axis=0).astype(int) + 1
     bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-    out = rect[starts[1]:stops[1],starts[0]:stops[0]], bbox
+    out = rectified[starts[1]:stops[1],starts[0]:stops[0]], bbox
     return out
     
-def crop_square(rect, alg):
+def crop_square(rectified, alg):
     bbox = get_bbox(alg)
     starts = np.min(bbox, axis=0).astype(int)
     stops = np.max(bbox, axis=0).astype(int) + 1
     bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-    out = rect[starts[1]:stops[1],starts[0]:stops[0]], bbox
+    out = rectified[starts[1]:stops[1],starts[0]:stops[0]], bbox
     return out
         
-def val_to_coords(val):
-    row, col = divmod(val, 8)
-    return (col, 7 - row)
-
 RED = (0, 0, 255)
 GREEN = (0, 255, 0)
 BLUE = (255, 0, 0)
@@ -273,27 +318,19 @@ clock_board = ClockBoard(initial_seconds, increment_seconds)
 
 open('.fen', 'w').write(clock_board.fen())
 
-last_rect = None
-def find_move(rect):
-    global last_rect
-    if last_rect is not None:
-        delta = cv2.absdiff(rect, last_rect)
+last_rectified = None
+def find_move(rectified):
+    global last_rectified
+    if last_rectified is not None:
+        delta = cv2.absdiff(rectified, last_rectified)
         sum_delta = np.sum(delta)
         BUMP_THRESH = 5000000
         if sum_delta > BUMP_THRESH:
-            print('Board moved {sum_delta} > {BUMP_THRESH}')
-        imgray = cv2.cvtColor(delta,cv2.COLOR_BGR2GRAY)
-        imgreen = delta[:,:,1]
-        imred = delta[:,:,0]
-        imblue = delta[:,:,2]
+            print(f'Board moved {sum_delta} > {BUMP_THRESH}')
         thresh = np.max(delta, axis=-1)
-        
-        #ret,thresh = cv2.threshold(imgreen,25,255,0)
-        #thresh = np.any(np.where(delta < 10, False, True), axis=2)  * 255
-            
     else:
         thresh = None
-    last_rect = rect.copy()
+    last_rectified = rectified.copy()
 
     changes = []
     if thresh is None:
@@ -329,9 +366,6 @@ def find_move(rect):
         total_change = np.sum(change)
         change_thresh = 5000
         change_count = np.sum(change > change_thresh)
-        #print(uci, move.from_square, move.to_square, move.promotion,
-        #      clock_board.is_en_passant(move),
-        #      clock_board.is_castling(move), change_count)
         if change_count == len(change):
             candidates.append([move, change_count, total_change])
     if len(candidates) == 0:
@@ -343,34 +377,16 @@ def find_move(rect):
         candidates = [candidates[i] for i in sorted]
         out = candidates[-1][0].uci()
     if out is not None:
-        delta = IM_HEIGHT / 8
-        box = np.array([[-1, -1],
-                        [-1,  1],
-                        [ 1,  1],
-                        [ 1, -1.]]) * .5 * delta
-        for u in range(2):
-            i, j = val_to_coords(alg_map[out[2 * u:2 * (u + 1)]])
-            bbox = box + np.int32([(i + .5) * delta, (8 - j - .5) * delta])
-            bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-
-        
-        draw_square(thresh, out[0:2], WHITE, 1)
-        draw_square(thresh, out[2:4], WHITE, 1)
-        
+        if False: ## cool image of changes since last image
+            draw_square(thresh, out[0:2], WHITE, 1)
+            draw_square(thresh, out[2:4], WHITE, 1)
+            imshow("thresh", thresh) 
         clock_board.push_uci(out, white_ms, black_ms)
-        print(clock_board.fen())
-        print(clock_board.fen(), file=open(".fen", 'w'), flush=True)
-        
-        
+        fen = clock_board.fen()
+        print(fen, file=open(".fen", 'w'), flush=True)
     return out
 
 vid = cv2.VideoCapture(0)
-  ## 1920 x 1080
-  ## 1024 x 768
-IM_WIDTH = 1024
-IM_HEIGHT = 786
-IM_WIDTH = 1920
-IM_HEIGHT = 1080
 IM_WIDTH = 640
 IM_HEIGHT = 480
 vid.set(cv2.CAP_PROP_FRAME_WIDTH, IM_WIDTH)
@@ -378,33 +394,30 @@ vid.set(cv2.CAP_PROP_FRAME_HEIGHT, IM_HEIGHT)
 
 move_number = 0
 
-DEG = np.pi / 180
-grid_guess = [-27214, -3834, 43305, 2.2340, 0.8692, -1.0829]
-
 FLIP_THRESH = 250
 def check_flip():
     balance = 0
     for letter in 'abcdefgh':
         for row in [1, 2]:
-            balance += np.mean(crop_square(rect, f'{letter}{row}')[0])
-            balance -= np.mean(crop_square(rect, f'{letter}{9-row}')[0])
+            balance += np.mean(crop_square(rectified, f'{letter}{row}')[0])
+            balance -= np.mean(crop_square(rectified, f'{letter}{9-row}')[0])
     return balance < FLIP_THRESH
 
 def get_side():
     balance = 0
     for j in [1, 2]:
         for i in range(1, 9):
-            balance += np.mean(crop_abs_square(rect, i, j)[0])
-            balance -= np.mean(crop_abs_square(rect, i, 9-j)[0])
-            draw_abs_square(rect, i, j, RED, 5)
-            draw_abs_square(rect, i, 9-j, BLUE, 5)
+            balance += np.mean(crop_abs_square(rectified, i, j)[0])
+            balance -= np.mean(crop_abs_square(rectified, i, 9-j)[0])
+            draw_abs_square(rectified, i, j, RED, 5)
+            draw_abs_square(rectified, i, 9-j, BLUE, 5)
     if balance > 0:
         out = chess.BLACK
     else:
         out = chess.WHITE
     return out
 
-def findChessboardCorners(n_ave=10, max_tries=20):
+def findChessboardCorners(n_ave=1, max_tries=20):
     print('Locating chessboard...')
     all_corners = []
     iter = 0
@@ -413,9 +426,8 @@ def findChessboardCorners(n_ave=10, max_tries=20):
         ret, frame = vid.read()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         ret, corners = cv2.findChessboardCorners(gray, (7, 7))
-        #ret, corners = cv2.findChessboardCorners(gray, (3, 7))
         if ret:
-            font = cv2.FONT_HERSHEY_SIMPLEX
+            font = defaults.font
             corners = corners.squeeze()
             sort = corners[:,0] + IM_HEIGHT * corners[:,1]
             corners = corners[np.argsort(sort)]
@@ -427,13 +439,34 @@ def findChessboardCorners(n_ave=10, max_tries=20):
         iter += 1
     all_corners = np.array(all_corners)
     corners = np.mean(all_corners, axis=0)
+
+    ret, image = vid.read()
+    for i, row in enumerate(corners):
+        for j, c in enumerate(row):
+            pos = tuple(c.astype(int))
+            cv2.circle(image,  pos, 10, (56, 123, 26), 4)
+            image = cv2.putText(image, f'{i}{j}', pos, defaults.font, 
+                                1, RED, 1, cv2.LINE_AA)
+
+    imshow('Corners', image)
     return corners
 
 def centerup():
     print("Center board in field of view.  Press 'q' to continue.")
+    font = defaults.font
     while 1:
         ret, frame = vid.read()
-        imshow('frame', frame)
+        frame = cv2.putText(frame, f'Calibrating camera ...',
+                            (150,40), font, 
+                            1, RED, 1, cv2.LINE_AA)
+        frame = cv2.putText(frame, f'... clear board,',
+                            (200,IM_HEIGHT//2 - 40), font, 
+                            1, RED, 1, cv2.LINE_AA)
+        frame = cv2.putText(frame, f'press "q" when centered.',
+                            (100,IM_HEIGHT//2), font, 
+                            1, RED, 1, cv2.LINE_AA)
+        
+        imshow('Calibrate', frame)
         key = cv2.waitKey(1)
         if key & 0xFF == ord('q'):
             break
@@ -441,22 +474,21 @@ def centerup():
 def calibrate():
     # Capture the video frame
     centerup()
-    corners = findChessboardCorners()
+    corners = findChessboardCorners(1)
+
+    ### extend 7x7 corners found in calibration to edge of board
+    ### using a polynomial fit
+    
     ij = np.empty((49, 2))
     xy = np.empty((49, 2))
     for i, row in enumerate(corners):
         for j, pos in enumerate(row):
             pos = tuple(pos.astype(int))
-            #cv2.circle(gray, pos, 10, (56, 123, 26), 4)
-            #image = cv2.putText(gray, f'{i}{j}', pos, font, 
-            #                    1, RED, 1, cv2.LINE_AA)
             ij[i * 7 + j] = i, j
             xy[i * 7 + j] = pos
     coeff = fit(ij, xy)
-    coords = np.array([[-1, -1],
-                       [-1,  7],
-                       [ 7,  7],
-                       [ 7, -1]])[::-1]
+
+    # find baord edge
     coords = np.array([[-1.5, -1.5],
                        [-1.5,  7.5],
                        [ 7.5,  7.5],
@@ -467,19 +499,26 @@ def calibrate():
                              [0, IM_HEIGHT - 1],
                              [IM_HEIGHT - 1, IM_HEIGHT - 1],
                              [IM_HEIGHT - 1, 0]])
-    print(input_pts)
-    print(output_pts)
     M = cv2.getPerspectiveTransform(input_pts,output_pts)
+    font = defaults.font
     while True:
         ret, frame = vid.read()
-        rect = cv2.warpPerspective(frame, M, (IM_HEIGHT, IM_HEIGHT),
+        rectified = cv2.warpPerspective(frame, M, (IM_HEIGHT, IM_HEIGHT),
                                    flags=cv2.INTER_LINEAR)        
 
-        imshow('rect', rect)
-        key = cv2.waitKey(1)
-        if key & 0xFF == ord('q'):
+        rectified = cv2.putText(rectified, f'Press "q" to continue.',
+                                (10,IM_HEIGHT//2), font, 
+                                1, RED, 1, cv2.LINE_AA)
+        rectified = cv2.putText(rectified, f'Press "x" to redo.',
+                                (10,IM_HEIGHT//2 + 40), font, 
+                                1, RED, 1, cv2.LINE_AA)
+        imshow('Calibrate', rectified)
+        key = chr(cv2.waitKey(1) & 0xFF)
+        if key == 'q':
             break
-    print('Calibaration complete.  You may now set up board.')
+        if key == 'x':
+            calibrate()
+            break
     return M, coeff
 
 cal_npz = 'perspective_matrix.npz'
@@ -488,22 +527,22 @@ if args.calibrate:
     perspective_matrix, ij_coeff = calibrate()
     np.savez(cal_npz, perspective_matrix=perspective_matrix)
     print('wrote', cal_npz)
+    print('Calibaration complete.  You may now set up board.')
+    cv2.destroyAllWindows()
 else:
     print("Skipping calibration")
 
 perspective_matrix = np.load(cal_npz)['perspective_matrix']
 
-
-
 game_on = False
 __last_move = False
 
-def get_rect():
+def get_rectified():
     ret, frame = vid.read()
-    rect = cv2.warpPerspective(frame, perspective_matrix,
+    rectified = cv2.warpPerspective(frame, perspective_matrix,
                                (IM_HEIGHT, IM_HEIGHT),
                                flags=cv2.INTER_LINEAR)
-    return rect
+    return rectified
 
 def render(renderer, board, side, colors):
     thread = threading.Thread(target=renderer.render,
@@ -520,12 +559,9 @@ class Renderers:
             renderer.render(board, side, colors=colors)
 
 mqttr = MqttRenderer
-#pgr = PygameRender(size=475)
-#renderers = Renderers([pgr, mqttr])
 renderers = Renderers([mqttr])
 
-rect = get_rect()
-dark_green = '#aaaaaa'
+rectified = get_rectified()
 dark_green = '#66aa66'
 dark_red = '#aa3333'
 colors = {'square dark':dark_red,
@@ -534,13 +570,13 @@ colors = {'square dark':dark_red,
           'square dark lastmove':"#bb6666",
           'margin':'#cccccc',
           'coord':dark_red}
-          
+colors = defaults.colors          
 
-def update_camera_view(rect):
+def update_camera_view(rectified):
     if flip_board:
-        view = rect[::-1, ::-1]
+        view = rectified[::-1, ::-1]
     else:
-        view = rect
+        view = rectified
     imshow('view', view)
     
 side = get_side()
@@ -552,9 +588,9 @@ old_board = None
 
 def get_position_image_filename(game_id, move_numner):
     return f'captures/{game_id:04d}_{move_number:04d}.png'
-def write_position_image(rect, game_id, move_number):
+def write_position_image(rectified, game_id, move_number):
     png = get_position_image_filename(game_id, move_number)
-    cv2.imwrite(png, rect)    
+    cv2.imwrite(png, rectified)    
 def read_position_image(game_id, move_number):
     png = get_position_image_filename(game_id, move_number)
     if os.path.exists(png):
@@ -564,8 +600,6 @@ def read_position_image(game_id, move_number):
     return out
 
 
-next_white_ms = initial_seconds * 1000
-next_black_ms = initial_seconds * 1000
 white_ms = initial_seconds * 1000
 black_ms = initial_seconds * 1000
 while True:
@@ -582,8 +616,14 @@ while True:
                 print('going back...total moves available:',
                       len(old_board.move_stack))
             clock_move = clock_board.pop()
-            mqtt_setwhite_ms(clock_move.white_ms)
-            mqtt_setblack_ms(clock_move.black_ms)
+            if len(clock_board.move_stack) > 0:
+                white_ms = clock_board.move_stack[-1].white_ms
+                black_ms = clock_board.move_stack[-1].black_ms
+            else:
+                white_ms = initial_seconds * 1000
+                black_ms = initial_seconds * 1000
+            mqtt_setwhite_ms(white_ms)
+            mqtt_setblack_ms(black_ms)
             mqtt_sethalfmove(len(clock_board.move_stack))
         else:
             clock_move = None
@@ -605,10 +645,10 @@ while True:
             m = len(old_board.move_stack)
             if  m > n:
                 clock_move = old_board.move_stack[n]
-                if len(old_board) > n + 1:
-                    next_move = old_board.move_stack[n+1]
+                if len(old_board) > n:
+                    next_move = old_board.move_stack[n]
                 else:
-                    next_move = ClockMove('xxxx', next_white_ms, next_black_ms)
+                    next_move = ClockMove('xxxx', white_ms, black_ms)
                 clock_board.push(clock_move)
                 mqtt_setwhite_ms(next_move.white_ms)
                 mqtt_setblack_ms(next_move.black_ms)
@@ -623,19 +663,17 @@ while True:
                 
             render(renderers, clock_board, side, colors)
     if key == 'u':
-        pgn_upload.upload_to_lichess(clock_board)
+        pgn_upload.upload_to_lichess(clock_board.get_pgn())
     if 'capture_queen.turn' in mqtt_events:
         ### TODO: handle more than one event
         turn_msg = mqtt_events['capture_queen.turn'][0]
-        white_ms = next_white_ms
-        black_ms = next_black_ms
-        turn, next_white_ms, next_black_ms = map(int, turn_msg.split('//'))
-        if next_black_ms <= 0 or next_white_ms <= 0:
-            clock_board.set_timeout(next_white_ms, next_black_ms)
+        turn, white_ms, black_ms = map(int, turn_msg.split('//'))
+        if black_ms <= 0 or white_ms <= 0:
+            clock_board.set_timeout(white_ms, black_ms)
         clock_hit = True
         old_board = None
     
-    rect = get_rect()
+    rectified = get_rectified()
     if not game_on:
         ranks = str(clock_board).splitlines()[:8]
         for j, rank in enumerate(ranks):
@@ -648,43 +686,43 @@ while True:
                         color = WHITE
                     else:
                         color = GRAY
-                    draw_square(rect, f'{letter}{number}', color, 2)
+                    draw_square(rectified, f'{letter}{number}', color, 2)
         #for i in [1, 2]:
         #    for letter in 'abcdefgh':
-        #        draw_square(rect, f'{letter}{i}', WHITE, 2)
-        #        draw_square(rect, f'{letter}{9-i}', GRAY, 2)
+        #        draw_square(rectified, f'{letter}{i}', WHITE, 2)
+        #        draw_square(rectified, f'{letter}{9-i}', GRAY, 2)
 
         bbox = get_board_bbox().astype(int)
-        cv2.rectangle(rect, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
-        update_camera_view(rect)
+        cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
+        update_camera_view(rectified)
     if key == 'q':
         break
     if key == 'x' or clock_hit:
         if not game_on:
-            rect = get_rect()
+            rectified = get_rectified()
             ### show the plane board
-            last_rect = rect.copy()
-            update_camera_view(rect)
+            last_rectified = rectified.copy()
+            update_camera_view(rectified)
         game_on = True
         cv2.destroyWindow("Previous Moves")
         for i in range(1):
             ret, frame = vid.read() ## clear buffer
             
         png = f'captures/{game_id:04d}_{move_number:04d}.png'
-        rect = cv2.warpPerspective(frame, perspective_matrix,
+        rectified = cv2.warpPerspective(frame, perspective_matrix,
                                    (IM_HEIGHT, IM_HEIGHT),
                                    flags=cv2.INTER_LINEAR)
-        move = find_move(rect)
+        move = find_move(rectified)
         move_number = len(clock_board.move_stack)
-        write_position_image(rect, game_id, move_number)
+        write_position_image(rectified, game_id, move_number)
 
         if move:
             __last_move = move
             fen = clock_board.fen()
             open('.fen', 'w').write(fen)
-            draw_square(rect, __last_move[0:2], RED, 1)
-            draw_square(rect, __last_move[2:4], RED, 1)
-            update_camera_view(rect)
+            draw_square(rectified, __last_move[0:2], RED, 1)
+            draw_square(rectified, __last_move[2:4], RED, 1)
+            update_camera_view(rectified)
 
         # put render in background thread so that image-capture is not blocked
         render(renderers, clock_board, side, colors)
@@ -701,11 +739,11 @@ while True:
         render(renderers, clock_board, side, colors)
     if key == 'f':
         flip_board = not flip_board
-        update_camera_view(rect)
+        update_camera_view(rectified)
         render(renderers, clock_board, side, colors)
     if 'capture_queen.reset_pi' in mqtt_events:
-        next_white_ms = initial_seconds * 1000
-        next_black_ms = initial_seconds * 1000
+        white_ms = initial_seconds * 1000
+        black_ms = initial_seconds * 1000
         old_board = None
         print('restart')
         fen = clock_board.fen()
@@ -716,8 +754,8 @@ while True:
         
     if key == 'r':
         ### restart
-        next_white_ms = initial_seconds * 1000
-        next_black_ms = initial_seconds * 1000
+        white_ms = initial_seconds * 1000
+        black_ms = initial_seconds * 1000
         old_board = None
         print('restart')
         fen = clock_board.fen()
