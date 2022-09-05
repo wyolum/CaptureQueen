@@ -63,13 +63,13 @@ def update_game(gameid, pgn_dict):
     sql = f'''\
     UPDATE Game
     SET 
-        white="{pgn_dict["white"]}",
-        black="{pgn_dict["black"]}",
-        site="{pgn_dict["site"]}",
-        date="{pgn_dict["date"]}",
-        result="{pgn_dict["result"]}",
-        termination="{pgn_dict["termination"]}",
-        timecontrol="{pgn_dict["timecontrol"]}"
+        white="{pgn_dict["White"]}",
+        black="{pgn_dict["Black"]}",
+        site="{pgn_dict["Site"]}",
+        date="{pgn_dict["Date"]}",
+        result="{pgn_dict["Result"]}",
+        termination="{pgn_dict["Termination"]}",
+        timecontrol="{pgn_dict["TimeControl"]}"
     WHERE
         rowid={gameid}
     '''
