@@ -1,0 +1,45 @@
+<head>
+  <body>
+    {% load static %}
+    <div>
+      <a href="/chess_db"> Return to index </a>
+      </div>
+  <a href="http://lichess.org/paste">
+  {% autoescape off %}
+  {{svg}}
+  {% endautoescape %}
+  </a>
+<div>
+<a href="/chess_db/{{game.id}}/-1/" class="previous">&laquo;</a>
+<a href="/chess_db/{{game.id}}/{{prev_ply}}/" class="previous round">&#8249;
+</a>
+<a href="/chess_db/{{game.id}}/{{next_ply}}/" class="next round">&#8250;</a>
+<a href="/chess_db/{{game.id}}/{{game.max_ply}}/" class="next">&raquo;</a>
+</div>
+<div>
+  <textarea name="pgn_area" rows="30" cols="40" id="pgn">
+{{ game.pgn }}
+  </textarea>
+</div>
+<div>
+<!-- The button used to copy the text -->
+<button onclick="myFunction()">Copy text</button>  
+</div>
+<script>
+function myFunction() {
+  // Get the text field
+  var copyText = document.getElementById("pgn");
+
+  // Select the text field
+  copyText.select();
+  copyText.setSelectionRange(0, 99999); // For mobile devices
+
+  // Copy the text inside the text field
+  navigator.clipboard.writeText(copyText.value);
+  
+  // Alert the copied text
+  //alert("Copied the text: " + copyText.value);
+}
+</script>
+</body>
+</html>

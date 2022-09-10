@@ -8,7 +8,7 @@ import defaults
 
 DB_FILENAME = 'chess.db'
 BASE_DIR = 'home/pi/code/mysite'
-DB_FILENAME = '/home/pi/code/mysite/db.sqlite3'
+DB_FILENAME = '/home/pi/code/CaptureQueen/mysite/db.sqlite3'
 def rename(name):
     return f'chess_db_{name.lower()}'
 
