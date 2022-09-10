@@ -1,5 +1,3 @@
-import cv2
-
 dark_red = '#aa3333'
 colors = {'square dark':dark_red,
           'square light':"#bbbbbb",
@@ -10,4 +8,4 @@ colors = {'square dark':dark_red,
           'coord':dark_red}
 time_control = "300+0"
 
-font = cv2.FONT_HERSHEY_SIMPLEX
+font_name = "FONT_HERSHEY_SIMPLEX"

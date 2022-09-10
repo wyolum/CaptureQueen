@@ -22,7 +22,7 @@ from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
 from mqtt_clock_client import mqtt_sethalfmove, mqtt_game_over
 
 import pgn_upload
-import chess_db
+import chess_db_functions as chess_db
 from board_map import fit, predict
 import kicker
 import defaults
@@ -114,7 +114,7 @@ class ClockBoard:
         self.headers = defaultdict(lambda :"?")
         self.start_time = datetime.now()
         datestr = self.start_time.strftime("%d/%m/%y %H:%M:%S")
-        self.gameid = chess_db.get_gameid(datestr)
+        self.game_id = chess_db.get_game_id(datestr)
         self.headers['Date'] = datestr
 
         region = utc_offset_response['region']
@@ -127,7 +127,7 @@ class ClockBoard:
         self.headers['Annotator'] = 'CaptureQueen'
         self.headers['TimeControl'] = f'{time_control}'
         self.headers['Variant'] = 'Standard'
-        chess_db.update_game(self.gameid, self.headers)
+        chess_db.update_game(self.game_id, self.headers)
 
     def resign(self, color):
         self.__resign = color
@@ -146,7 +146,7 @@ class ClockBoard:
         else:
             raise ValueError(f'Unknown color "{color}"')
         result = self.get_result()
-        chess_db.move(self.gameid, self.ply(), f'{{{color} resigns.}} {{{ms/1000:<7.1f}}} {result}')
+        chess_db.move(self.game_id, self.ply(), f'{{{color} resigns.}} {{{ms/1000:<7.1f}}} {result}')
         mqtt_game_over(result)
         pgn_upload.upload_to_lichess(self.get_pgn())
 
@@ -199,8 +199,8 @@ class ClockBoard:
         moves = self.move_stack
         self.headers['Result'] = self.get_result()
         self.headers['Termination'] = self.get_termination()
-        chess_db.update_game(self.gameid, self.headers)
-        return chess_db.get_pgn(self.gameid)
+        chess_db.update_game(self.game_id, self.headers)
+        return chess_db.get_pgn(self.game_id)
     
     def set_timeout(self, white_ms, black_ms):
         legal_moves = list(self.legal_moves)
@@ -232,7 +232,7 @@ class ClockBoard:
             ms = clock_move.white_ms
         else:
             ms = clock_move.black_ms
-        chess_db.move(self.gameid, ply, f'{san:>7s} {{{ms/1000:<7.1f}}}')
+        chess_db.move(self.game_id, ply, f'{san:>7s} {{{ms/1000:<7.1f}}}')
         return self.board.push(clock_move.move)
 
     def push_uci(self, uci, white_ms, black_ms):
@@ -454,7 +454,7 @@ def findChessboardCorners(n_ave=1, max_tries=20):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         ret, corners = cv2.findChessboardCorners(gray, (7, 7))
         if ret:
-            font = defaults.font
+            font = getattr(cv2, defaults.font_name)
             corners = corners.squeeze()
             sort = corners[:,0] + IM_HEIGHT * corners[:,1]
             corners = corners[np.argsort(sort)]
@@ -468,11 +468,13 @@ def findChessboardCorners(n_ave=1, max_tries=20):
     corners = np.mean(all_corners, axis=0)
 
     ret, image = vid.read()
+    font = getattr(cv2, defaults.font_name)
     for i, row in enumerate(corners):
         for j, c in enumerate(row):
             pos = tuple(c.astype(int))
             cv2.circle(image,  pos, 10, (56, 123, 26), 4)
-            image = cv2.putText(image, f'{i}{j}', pos, defaults.font, 
+            
+            image = cv2.putText(image, f'{i}{j}', pos, font, 
                                 1, RED, 1, cv2.LINE_AA)
 
     imshow('Corners', image)
@@ -480,7 +482,7 @@ def findChessboardCorners(n_ave=1, max_tries=20):
 
 def centerup():
     print("Center board in field of view.  Press 'q' to continue.")
-    font = defaults.font
+    font = getattr(cv2, defaults.font_name)
     while 1:
         ret, frame = vid.read()
         frame = cv2.putText(frame, f'Calibrating camera ...',
@@ -527,7 +529,7 @@ def calibrate():
                              [IM_HEIGHT - 1, IM_HEIGHT - 1],
                              [IM_HEIGHT - 1, 0]])
     M = cv2.getPerspectiveTransform(input_pts,output_pts)
-    font = defaults.font
+    font = getattr(cv2, defaults.font_name)
     while True:
         ret, frame = vid.read()
         rectified = cv2.warpPerspective(frame, M, (IM_HEIGHT, IM_HEIGHT),
