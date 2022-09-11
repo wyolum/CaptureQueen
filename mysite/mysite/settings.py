@@ -33,9 +33,16 @@ SECRET_KEY = 'django-insecure-!qi&(4c+lo1268_j(usg%1jf-u8(--zn#v-mix@ela7!bg$w#(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    s.connect(("8.8.8.8", 80))
+    ip = s.getsockname()[0]
+    s.close()
+except OSError as e:
+    ip = str(e)
 
-
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", ip]
 # Application definition
 
 INSTALLED_APPS = [

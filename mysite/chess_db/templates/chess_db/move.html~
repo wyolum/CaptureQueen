@@ -1,15 +1,19 @@
 <head>
-<body>
-
-  {% load static %}
+  <body>
+    {% load static %}
+    <div>
+      <a href="/chess_db"> Return to index </a>
+      </div>
   <a href="http://lichess.org/paste">
   {% autoescape off %}
-  {{game.final_image}}
-  {% endautoescape %}</a>
+  {{svg}}
+  {% endautoescape %}
+  </a>
 <div>
-<a href="/chess_db/{{game.id}}/0/" class="previous">&laquo;</a>
-<a href="/chess_db/{{game.id}}/{{game.max_ply|add:'-1'}}/" class="previous round">&#8249;</a>
-<a href="/chess_db/{{game.id}}/{{game.max_ply}}/" class="next round">&#8250;</a>
+<a href="/chess_db/{{game.id}}/-1/" class="previous">&laquo;</a>
+<a href="/chess_db/{{game.id}}/{{prev_ply}}/" class="previous round">&#8249;
+</a>
+<a href="/chess_db/{{game.id}}/{{next_ply}}/" class="next round">&#8250;</a>
 <a href="/chess_db/{{game.id}}/{{game.max_ply}}/" class="next">&raquo;</a>
 </div>
 <div>

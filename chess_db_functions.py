@@ -24,9 +24,13 @@ def get_game_id(date):
         (Event, Site, Date, White, Black, 
          Result, Termination, Annotator, Variant, TimeControl) 
     VALUES 
-        ("CaptureQueen", "NA", "{date}", "White", "Black",
-         "NA", "NA", "NA", "Standard", "300+0")'''
-    db.execute(sql)
+        ("CaptureQueen OTB", "NA", "{date}", "White", "Black",
+         "NA", "NA", "CaptureQueen", "Standard", "300+0")'''
+    cur = db.execute(sql)
+    out = cur.lastrowid
+    db.commit()
+    return out
+
     sql = f'SELECT max(rowid) FROM {rename("Game")}'
     out = db.execute(sql).fetchone()[0]
     db.commit()
@@ -92,7 +96,7 @@ def get_pgn(game_id):
     cur = db.execute(sql)
     for ply, clockmove in cur.fetchall():
         if ply % 2 == 0: ## white, new row
-            if 'resigns' in clockmove:
+            if 'NOTresigns' in clockmove:
                 pass
             else:
                 out.append(f'{ply//2 + 1}. ')
@@ -125,28 +129,27 @@ def get_game(game_id):
             board.push(move)
     return game, board
 
+FINAL_PLY = 1234567890
 def get_final_image(game_id, size=640, flipped=False):
-    game, board = get_game(game_id)
-    if len(board.move_stack) > 0:
-        lastmove = board.move_stack[-1]
-    else:
-        lastmove = None
-    svg = chess.svg.board(board,size=size,
-                          flipped=flipped,
-                          lastmove=lastmove,
-                          colors=defaults.colors)
-    return svg
+    return get_image_at(game_id, ply=FINAL_PLY, size=size, flipped=flipped)
 
 def get_image_at(game_id, ply=-1, size=640, flipped=False):
     game, board = get_game(game_id)
-    out = chess.Board()
-    for i in range(min([ply+1, len(board.move_stack)])):
-        out.push(board.move_stack[i])
+    if ply == FINAL_PLY:
+        out = board
+    else:
+        out = chess.Board()
+        for i in range(min([ply+1, len(board.move_stack)])):
+            out.push(board.move_stack[i])
+            
     if len(out.move_stack) > 0:
         lastmove = out.move_stack[-1]
     else:
         lastmove = None
+
+    check = out.king(out.turn) if out.is_check() else None
     svg = chess.svg.board(out,size=size,
+                          check=check,
                           flipped=flipped,
                           lastmove=lastmove,
                           colors=defaults.colors)

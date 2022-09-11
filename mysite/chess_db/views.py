@@ -1,6 +1,7 @@
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+import sqlite3
 
 from .models import Game, Move
 # Create your views here.
@@ -8,6 +9,17 @@ import chess_db_functions
 
 def index(request):
     page = request.GET.get('page', 1)
+    if False:
+        sql = ''''\
+    SELECT game_id, max(ply) as max_ply
+    FROM Move
+    WHERE max_ply > 0
+    GROUP BY game_id
+    '''
+        db = sqlite3.connect('/home/pi/code/CaptureQueen/mysite/db.sqlite3')
+        cur = db.execute(sql)
+        result = cur.fetchall()
+
     latest_game_list = Game.objects.order_by('-Date')
     keepers = []
     for i, game in enumerate(latest_game_list):
@@ -36,8 +48,12 @@ def move(request, game_id, ply=None):
     game = Game.objects.get(pk=game_id)
     if ply is None:
         ply = game.max_ply
-    move = Move.objects.filter(game_id=game_id).filter(ply=ply)
-    svg = chess_db_functions.get_image_at(game_id, ply, size=350)
+    moveset = Move.objects.filter(game_id=game_id).filter(ply=ply)
+    if moveset.count() > 0:
+        move= moveset[0]
+    else:
+        move='1.'
+    svg = chess_db_functions.get_image_at(game_id, ply, size=550)
     if ply >= 0:
         prev_ply = ply - 1
     else:
@@ -47,6 +63,7 @@ def move(request, game_id, ply=None):
     else:
         next_ply = game.max_ply
     context = {'game':game,
+               'move':str(move),
                'ply':ply,
                'prev_ply':prev_ply,
                'next_ply':next_ply,

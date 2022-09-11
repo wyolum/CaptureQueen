@@ -174,6 +174,7 @@ class ClockBoard:
                     out = "0-1"
                 if black_ms <= 0 and white_ms > 0:
                     out = "1-0"
+        self.headers["Result"] = out
         return out
 
     def get_termination(self):
@@ -192,22 +193,20 @@ class ClockBoard:
                     out = "Time forfeit"
         else:
             out = 'None'
+        self.headers["Termination"] = out
         return out
 
     def get_pgn(self):
         board = chess.Board()
         moves = self.move_stack
-        self.headers['Result'] = self.get_result()
-        self.headers['Termination'] = self.get_termination()
+        self.get_result()
+        self.get_termination()
         chess_db.update_game(self.game_id, self.headers)
         return chess_db.get_pgn(self.game_id)
     
     def set_timeout(self, white_ms, black_ms):
-        legal_moves = list(self.legal_moves)
-        if len(legal_moves) > 0:
-            ### make dummy move to complete game with time forfiet
-            move = legal_moves[0]
-            self.move_stack.append(ClockMove(move, white_ms, black_ms))
+        self.get_result()
+        self.get_termination()
 
     def __getattr__(self, name):
         return getattr(self.board, name)
@@ -232,13 +231,25 @@ class ClockBoard:
             ms = clock_move.white_ms
         else:
             ms = clock_move.black_ms
-        chess_db.move(self.game_id, ply, f'{san:>7s} {{{ms/1000:<7.1f}}}')
-        return self.board.push(clock_move.move)
+        self.board.push(clock_move.move)
+
+        move_str = f'{san:>7s} {{{ms/1000:<7.1f}}}'
+        if self.board.is_game_over():
+            move_str += ' ' + self.get_result()
+            self.get_termination()
+            chess_db.update_game(self.game_id, self.headers)
+            
+        chess_db.move(self.game_id, ply, move_str)
+
+        ### check if game is over
+        if self.board.is_checkmate():
+            mqtt_game_over(self.get_result())
 
     def push_uci(self, uci, white_ms, black_ms):
         move = chess.Move.from_uci(uci)
         clock_move = ClockMove(move, white_ms, black_ms)
         self.push(clock_move)
+        
 
     def pop(self):
         self.board.pop() ### keep in sync
@@ -351,7 +362,7 @@ def find_move(rectified):
     if last_rectified is not None:
         delta = cv2.absdiff(rectified, last_rectified)
         sum_delta = np.sum(delta)
-        BUMP_THRESH = 5000000
+        BUMP_THRESH = 10000000
         if sum_delta > BUMP_THRESH:
             print(f'Board moved {sum_delta} > {BUMP_THRESH}')
         thresh = np.max(delta, axis=-1)
@@ -562,6 +573,7 @@ else:
     print("Skipping calibration")
 
 kicker.kick('pyqt_mqtt_chess.py')
+kicker.kick('mysite/manage.py', args=('runserver',))
     
 perspective_matrix = np.load(cal_npz)['perspective_matrix']
 
@@ -726,6 +738,10 @@ while True:
         bbox = get_board_bbox().astype(int)
         cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
         update_camera_view(rectified)
+    if 'capture_queen.draw' in mqtt_events:
+        clock_board.draw()
+        mqtt_clock_pause()
+        
     if 'capture_queen.resign' in mqtt_events:
         color = mqtt_events['capture_queen.resign'][0] == 'True'
         clock_board.resign(color)
@@ -809,4 +825,3 @@ while True:
 vid.release()
 # Destroy all the windows
 cv2.destroyAllWindows()
- 

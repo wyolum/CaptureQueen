@@ -1,23 +1,56 @@
 <head>
+<style>
+.pagination {
+  display: inline-block;
+}
+
+.pagination a {
+  color: black;
+  float: left;
+  padding: 8px 16px;
+  text-decoration: none;
+}
+
+.pagination a.active {
+  background-color: #4CAF50;
+  color: white;
+}
+.pagination a:hover:not(.active) {background-color: #ddd;}
+td {  white-space:pre }
+</style>
   <body>
     {% load static %}
-    <div>
-      <a href="/chess_db"> Return to index </a>
-      </div>
+<div class="pagination">
+<table>
+<tr>
+  <th><h1>
+<a href="/chess_db"> Return to index </a></h1></th>
+  <th>    </th>
+<th><h1><a href="/chess_db/{{game.id}}/-1/" class="previous"> << </a></h1></th>
+  <th>    </th>
+<th><h1><a href="/chess_db/{{game.id}}/{{prev_ply}}/" class="previous round"> <</a></h1></th>
+  <th>    </th>
+<th><h1><a href="/chess_db/{{game.id}}/{{next_ply}}/" class="next round"> > </a></h1></th>
+  <th>    </th>
+<th><h1><a href="/chess_db/{{game.id}}/{{game.max_ply}}/" class="next"> >> </a></h1></th>
+</tr>
+</table>
+</div>
+<div>
+  {{move}}
+</div>
+
+<div>
   <a href="http://lichess.org/paste">
   {% autoescape off %}
   {{svg}}
   {% endautoescape %}
   </a>
-<div>
-<a href="/chess_db/{{game.id}}/-1/" class="previous">&laquo;</a>
-<a href="/chess_db/{{game.id}}/{{prev_ply}}/" class="previous round">&#8249;
-</a>
-<a href="/chess_db/{{game.id}}/{{next_ply}}/" class="next round">&#8250;</a>
-<a href="/chess_db/{{game.id}}/{{game.max_ply}}/" class="next">&raquo;</a>
 </div>
 <div>
-  <textarea name="pgn_area" rows="30" cols="40" id="pgn">
+</div>
+<div>
+  <textarea name="pgn_area" rows="20" cols="65" id="pgn">
 {{ game.pgn }}
   </textarea>
 </div>
