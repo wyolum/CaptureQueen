@@ -96,7 +96,7 @@ def get_pgn(game_id):
     cur = db.execute(sql)
     for ply, clockmove in cur.fetchall():
         if ply % 2 == 0: ## white, new row
-            if 'NOTresigns' in clockmove:
+            if 'resigns' in clockmove:
                 pass
             else:
                 out.append(f'{ply//2 + 1}. ')

@@ -83,9 +83,10 @@ def getip():
     return s.getsockname()[0]
 
 localip = getip()
-utc_url = ('https://wyolum.com/utc_offset/utc_offset.py'
+utc_url = ('http://wyolum.com/utc_offset/utc_offset.py'
            '?dev_type=CaptureQueen.Mosquitto&'
            f'localip={localip}')
+print(f'Try:\n{utc_url}\n')
 r = requests.get(utc_url, headers={"User-Agent":"XY"})
 utc_offset_response = json.loads(r.content.decode('utf-8'))
 

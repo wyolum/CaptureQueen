@@ -53,7 +53,7 @@ def move(request, game_id, ply=None):
         move= moveset[0]
     else:
         move='1.'
-    svg = chess_db_functions.get_image_at(game_id, ply, size=550)
+    svg = chess_db_functions.get_image_at(game_id, ply, size=250)
     if ply >= 0:
         prev_ply = ply - 1
     else:
