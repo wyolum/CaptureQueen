@@ -147,7 +147,6 @@ class MainWindow(QWidget):
                 squares += c
         col = ord(uci[2]) - ord('a')
         squares[col] = piece
-        print(squares)
         new_row = ''
         n = 0
         for s in squares:
@@ -163,10 +162,17 @@ class MainWindow(QWidget):
         rows[row_i] = new_row
         fields[0] = '/'.join(rows)
         new_fen =  ' '.join(fields)
-
+        piece_type = {'r':chess.ROOK,
+                      'b':chess.BISHOP,
+                      'n':chess.KNIGHT}[piece.lower()]
+        new_move = chess.Move(chess.parse_square(uci[0:2]),
+                              chess.parse_square(uci[2:4]),
+                              promotion=piece_type)
+        self.lastmove = new_move
         self.hidePromotionButtons()
         self.board = chess.Board(new_fen)
         self.display_position()
+
         mqtt_underpromote_to(piece)
         
     def handleRookPromotion(self):
@@ -223,7 +229,7 @@ class MainWindow(QWidget):
         
         if self.lastmove:
             lastmove_uci = self.lastmove.uci()
-            if (len(lastmove_uci) == 5 and lastmove_uci[4] in 'qrbn'):
+            if (len(lastmove_uci) == 5 and lastmove_uci[4] in 'q'):
                 self.showPromotionButtons()
             else:
                 self.hidePromotionButtons()
