@@ -130,6 +130,9 @@ class ClockBoard:
         self.headers['Variant'] = 'Standard'
         chess_db.update_game(self.game_id, self.headers)
 
+    def set_fen(self, fen):
+        self.board = chess.Board(fen)
+
     def resign(self, color):
         self.__resign = color
         if color == chess.WHITE:
@@ -355,7 +358,9 @@ GRAY = (128, 128, 128)
 
 clock_board = ClockBoard(initial_seconds, increment_seconds)
 
-open('.fen', 'w').write(clock_board.fen())
+fen = clock_board.fen()
+open('.fen', 'w').write(fen)
+
 
 last_rectified = None
 def find_move(rectified):
@@ -624,7 +629,6 @@ def update_camera_view(rectified):
     imshow('view', view)
     
 side = get_side()
-render(renderers, None, side==chess.BLACK, colors=colors)
 
 mqtt_clock_reset(initial_seconds, increment_seconds)
 
@@ -650,6 +654,17 @@ while True:
     key = chr(cv2.waitKey(1) & 0xFF)
     mqtt_events = mqtt_gather_events()
     clock_hit = False
+    if 'capture_queen.underpromote' in mqtt_events:
+        msg = mqtt_events['capture_queen.underpromote'][0].strip()
+        if len(clock_board.move_stack) > 0:
+            last_move = clock_board.move_stack[-1]
+            uci = last_move.uci()
+            if len(uci) == 5 and uci[4] == 'q':
+                new_uci = uci[:4] + msg[0].lower()
+                clock_board.pop()
+                clock_board.push_uci(new_uci,
+                                     last_move.white_ms,
+                                     last_move.black_ms)
     # print(key)
     if key == 'Q' or 'capture_queen.goback' in mqtt_events: ### go back
         game_on = False
@@ -802,6 +817,7 @@ while True:
         fen = clock_board.fen()
         open('.fen', 'w').write(fen)
         clock_board = ClockBoard(initial_seconds, increment_seconds)
+
         render(renderers, None, side, colors)        
         game_on = False
         
@@ -815,6 +831,7 @@ while True:
         open('.fen', 'w').write(fen)
         game_id += 1
         clock_board = ClockBoard(initial_seconds, increment_seconds)
+
         mqtt_clock_reset(initial_seconds, increment_seconds)
         render(renderers, None, side, colors)        
         game_on = False

@@ -10,13 +10,13 @@ from PyQt5.QtSvg import QSvgWidget
 from PyQt5.QtWidgets import QApplication, QWidget, QApplication, QFileDialog
 from PyQt5.QtWidgets import QLabel, QTextEdit, QPushButton
 from PyQt5.QtCore import Qt, QTimer, QTime, QSize
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtGui import QPainter, QColor, QPen
 
 from mqtt_clock_client import mqtt_subscribe, mqtt_start, mqtt_clock_reset
 from mqtt_clock_client import MqttRenderer, mqtt_clock_pause
 from mqtt_clock_client import mqtt_setblack_ms, mqtt_setwhite_ms
-from mqtt_clock_client import mqtt_sethalfmove
+from mqtt_clock_client import mqtt_sethalfmove, mqtt_underpromote_to
 from mqtt_clock_client import mqtt_goback, mqtt_goforward, mqtt_quit, mqtt_resign, mqtt_draw
 
 import defaults
@@ -55,6 +55,23 @@ class MainWindow(QWidget):
         self.widgetSvg = QSvgWidget(parent=self)
         self.widgetSvg.setGeometry(0, 0, 450, 450)
 
+        button = QPushButton('', self)
+        button.clicked.connect(self.handleRookPromotion)
+        button.setIconSize(QSize(50,50))
+        button.move(465,20)
+        self.rook_button = button
+        
+        button = QPushButton('', self)
+        button.clicked.connect(self.handleKnightPromotion)
+        button.setIconSize(QSize(50,50))
+        button.move(465,85)
+        self.knight_button = button
+
+        button = QPushButton('', self)
+        button.clicked.connect(self.handleBishopPromotion)
+        button.setIconSize(QSize(50,50))
+        button.move(465,150) 
+        self.bishop_button = button
 
         button = QPushButton(self)
         button.setText("Draw")
@@ -103,6 +120,88 @@ class MainWindow(QWidget):
         mqtt_subscribe(self.on_mqtt)
         mqtt_start()
         #mqtt_clock_reset(self.initial_seconds, self.increment_seconds)
+        self.hidePromotionButtons()
+    def underpromote_to(self, piece):
+        if self.lastmove is None:
+            return
+        uci = self.lastmove.uci()
+        if len(uci) < 5 or uci[-1] != 'q':
+            return
+        fen = self.board.fen()
+        if self.board.turn == chess.BLACK:
+            piece = piece.upper()
+            row = fen.split()[0].split('/')[0]
+            row_i = 0
+        else:
+            piece = piece.lower()
+            row_i = 7
+        fields = fen.split()
+        rows = fields[0].split('/')
+        row = rows[row_i]
+        squares = []
+        for c in row:
+            if c in '12345678':
+                n  = int(c)
+                squares += '.' * n
+            else:
+                squares += c
+        col = ord(uci[2]) - ord('a')
+        squares[col] = piece
+        new_row = ''
+        n = 0
+        for s in squares:
+            if s == '.':
+                n += 1
+            else:
+                if n > 0:
+                    new_row += f'{n}'
+                    n = 0
+                new_row += f'{s}'
+        if n > 0:
+            new_row += f'{n}'
+        rows[row_i] = new_row
+        fields[0] = '/'.join(rows)
+        new_fen =  ' '.join(fields)
+        piece_type = {'r':chess.ROOK,
+                      'b':chess.BISHOP,
+                      'n':chess.KNIGHT}[piece.lower()]
+        new_move = chess.Move(chess.parse_square(uci[0:2]),
+                              chess.parse_square(uci[2:4]),
+                              promotion=piece_type)
+        self.lastmove = new_move
+        self.hidePromotionButtons()
+        self.board = chess.Board(new_fen)
+        self.display_position()
+
+        mqtt_underpromote_to(piece)
+        
+    def handleRookPromotion(self):
+        self.underpromote_to('r')
+
+    def handleBishopPromotion(self):
+        self.underpromote_to('b')
+
+    def handleKnightPromotion(self):
+        self.underpromote_to('n')
+        
+    def showPromotionButtons(self):
+        turn = self.board.turn
+        if turn == chess.BLACK:
+            self.rook_button.setIcon(QIcon('./img/whiter.png'))
+            self.bishop_button.setIcon(QIcon('./img/whiteb.png'))
+            self.knight_button.setIcon(QIcon('./img/whiten.png'))
+        else:
+            self.rook_button.setIcon(QIcon('./img/blackr.png'))
+            self.bishop_button.setIcon(QIcon('./img/blackb.png'))
+            self.knight_button.setIcon(QIcon('./img/blackn.png'))
+        self.rook_button.setVisible(True)
+        self.bishop_button.setVisible(True)
+        self.knight_button.setVisible(True)
+
+    def hidePromotionButtons(self):
+        self.rook_button.hide()
+        self.bishop_button.hide()
+        self.knight_button.hide()
 
     def draw(self):
         self.grey_overlay.setVisible(True)
@@ -127,6 +226,14 @@ class MainWindow(QWidget):
                                    flipped=self.flipped,
                                    lastmove=self.lastmove,
                                    colors=self.colors)
+        
+        if self.lastmove:
+            lastmove_uci = self.lastmove.uci()
+            if (len(lastmove_uci) == 5 and lastmove_uci[4] in 'q'):
+                self.showPromotionButtons()
+            else:
+                self.hidePromotionButtons()
+            
         open(self.svg_filename, 'w').write(self.svg)
         self.svg_stale = True
         

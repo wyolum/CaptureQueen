@@ -18,10 +18,10 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe("capture_queen.quit")
     client.subscribe("capture_queen.resign")
     client.subscribe("capture_queen.draw")
+    client.subscribe("capture_queen.underpromote")
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
-    #print(msg.topic+" "+str(msg.payload))
     for cb in subscribers:
         cb(msg)
 client = mqtt.Client()
@@ -85,6 +85,11 @@ def mqtt_setwhite_ms(ms):
 def mqtt_clock_pause(paused):
     paused = int(paused)
     publish.single(group + '.paused', paused,
+                   hostname="localhost")
+    
+def mqtt_underpromote_to(piece):
+    print(f'mqtt_underpromote_to("{piece}")')
+    publish.single(group + '.underpromote', piece,
                    hostname="localhost")
     
 def mqtt_clock_reset(initial, increment):
