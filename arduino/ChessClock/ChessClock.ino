@@ -197,8 +197,7 @@ void setup_wifi() {
   delay(10);
   // We start by connecting to a WiFi network
   // reset network?
-  //wifiManager.startConfigPortal("KLOK");
-  //wifiManager.resetSettings();
+  wifiManager.resetSettings();
   wifiManager.autoConnect("CaptureQueen");
 
   Serial.println("Yay connected!");
