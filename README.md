@@ -54,6 +54,15 @@ Hit 's' to change the location of the white pieces if they are not already in
 the correct spot.
 Hit 'f' to flip the board view
 
+## Set up network
+1. Start wifi hotspot (or use local wireless area network WAN)
+1. Connect pi to hotspot
+1. Start fen_capture.py on pi
+1. Power clock
+1. find access point CaptureQueen (to get clock on line)
+1. log clock onto WAN
+1. reset fen_capture.py (type 'r')
+
 Power the clock and wait for LEDs to display.
 1. hit the button on the side of the black pieces.  This starts the white
    clock and triggers an image to be taken of the starting position.
