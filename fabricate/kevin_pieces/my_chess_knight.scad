@@ -26,6 +26,8 @@ translate([-20, -5, 45])cube(10);
 }
 
 difference(){
-    knight();
+   rotate(ROTATE)scale(SCALE)knight();
+    //chop off the bottom in case we are rotated
+    rotate([180,0,0])cylinder(h=King_Height,d=300);
     magnet();
 }

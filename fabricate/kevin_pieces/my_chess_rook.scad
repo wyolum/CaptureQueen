@@ -12,6 +12,8 @@ module rook(){
 }
 
 difference(){
-    rook();
+   rotate(ROTATE)scale(SCALE)rook();
+    //chop off the bottom in case we are rotated
+    rotate([180,0,0])cylinder(h=King_Height,d=300);
     magnet();
 }

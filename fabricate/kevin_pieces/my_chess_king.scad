@@ -10,6 +10,8 @@ module king(){
     import(file="profiles/my_king_cross.svg");
 }
 difference(){
-    king();
+   rotate(ROTATE)scale(SCALE)king();
+    //chop off the bottom in case we are rotated
+    rotate([180,0,0])cylinder(h=King_Height,d=300);
     magnet();
 }
