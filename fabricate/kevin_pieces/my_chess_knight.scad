@@ -29,5 +29,6 @@ difference(){
    rotate(ROTATE)scale(SCALE)knight();
     //chop off the bottom in case we are rotated
     rotate([180,0,0])cylinder(h=King_Height,d=300);
-    magnet();
+    //magnet();
+    king_magnet(o=.4*King_Height);
 }
