@@ -10,7 +10,7 @@ module bishop(){
     }
 }
 difference(){
-   rotate(ROTATE)scale(SCALE)bishop();
+   rotate(ROTATE)scale(SCALE)rotate([0,0,90])bishop();
     //chop off the bottom in case we are rotated
     rotate([180,0,0])cylinder(h=King_Height,d=300);
     //magnet();
