@@ -15,8 +15,8 @@ DEFAULT_MAGNET_H=2;
 
 // this is how far into the piece the magnet is "lifted" zero for a hole in the bottom,
 // .2 gives one layer of plastic for my default printing parameters
-//DEFAULT_BOTTOM_OFFSET =.2;
-DEFAULT_BOTTOM_OFFSET =0;
+DEFAULT_BOTTOM_OFFSET =.2;
+//DEFAULT_BOTTOM_OFFSET =0;
 
 // if you want to scale the whole set do it relative to the king
 // King_Height = DEFAULT_KING_HEIGHT for no scaeing
