@@ -26,6 +26,8 @@ King_Height = 2*inch;
 Half_Pieces = true;
 // one magnet or two for the lying down pieces?
 Two_magnets = true;
+// handles or no
+Handles = true;
 
 //Don't change (calculations based on variables above)
 Scale_factor = King_Height/DEFAULT_KING_HEIGHT;

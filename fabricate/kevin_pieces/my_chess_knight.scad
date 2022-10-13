@@ -23,6 +23,7 @@ difference(){
 translate([1.5, 0, 42.])scale([3, 1, 1])rotate([0,0,60])cylinder($fn=3, d1=0, d2=14, h=10);
 translate([-20, -5, 45])cube(10);
 }
+tab_handle();
 }
 
 difference(){

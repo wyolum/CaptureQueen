@@ -19,3 +19,10 @@ module king_magnet(bottom_offset = DEFAULT_BOTTOM_OFFSET, magnet_dia=DEFAULT_MAG
        color([1,0,0])translate([0,-(o),bottom_offset])cylinder(h=magnet_h,d=magnet_dia);
     }
 }
+
+module tab_handle(){
+if (Handles){  
+    translate([-5,10,15])rotate([0,90,30])cylinder(h=2, d=15);
+    translate([5,10,15])rotate([0,90,-30])cylinder(h=2, d=15);
+    }
+}      

@@ -10,6 +10,7 @@ module queen(){
         rotate([0, 0, i * 360/8])color("black")translate([0, 52, 0])rotate([30, 0, 0])scale([1, .25, 1])cylinder(d=12, h=200, $fn=30);
       }
     }
+    tab_handle();
 }
 
 difference(){
