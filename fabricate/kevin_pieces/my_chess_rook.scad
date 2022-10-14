@@ -13,7 +13,11 @@ module rook(){
 }
 
 difference(){
-   rotate(ROTATE)scale(SCALE)rook();
+   union(){
+        translate([0,0,lift])rotate(ROTATE)scale(SCALE)rook();
+        if (lift != 0)
+            translate([0, 0, 0])linear_extrude(height=lift)projection()rotate([90, 0, 0])scale(SCALE)rook();
+    }
     //chop off the bottom in case we are rotated
     rotate([180,0,0])cylinder(h=King_Height,d=300);
     //magnet();

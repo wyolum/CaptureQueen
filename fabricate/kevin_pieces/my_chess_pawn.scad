@@ -9,7 +9,11 @@ module pawn(){
   }
  
 difference(){
-   rotate(ROTATE)scale(SCALE)pawn();
+   union(){
+        translate([0,0,lift])rotate(ROTATE)scale(SCALE)pawn();
+        if (lift != 0)
+            translate([0, 0, 0])linear_extrude(height=lift)projection()rotate([90, 0, 0])scale(SCALE)pawn();
+    }
     //chop off the bottom in case we are rotated
     rotate([180,0,0])cylinder(h=King_Height,d=300);
     magnet();

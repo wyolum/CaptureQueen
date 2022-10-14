@@ -11,7 +11,11 @@ module king(){
     tab_handle();
   }
 difference(){
-    /*translate([0,0,2]) */rotate(ROTATE)scale(SCALE)king();
+    union(){
+        translate([0,0,lift])rotate(ROTATE)scale(SCALE)king();
+        if (lift != 0)
+            translate([0, 0, 0])linear_extrude(height=lift)projection()rotate([90, 0, 0])scale(SCALE)king();
+    }
     //chop off the bottom in case we are rotated
     rotate([180,0,0])cylinder(h=King_Height,d=300);
     //magnet();

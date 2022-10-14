@@ -12,7 +12,11 @@ module bishop(){
     translate([0,-3,-5])tab_handle();
 }
 difference(){
-   rotate(ROTATE)scale(SCALE)bishop();
+   union(){
+        translate([0,0,lift])rotate(ROTATE)scale(SCALE)bishop();
+        if (lift != 0)
+            translate([0, 0, 0])linear_extrude(height=lift)projection()rotate([90, 0, 0])scale(SCALE)bishop();
+    }
     //chop off the bottom in case we are rotated
     rotate([180,0,0])cylinder(h=King_Height,d=300);
     //magnet();
