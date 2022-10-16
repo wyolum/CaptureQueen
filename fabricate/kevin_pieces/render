@@ -1,8 +1,0 @@
-#!/bin/bash
-
-openSCAD my_chess_pawn.scad -o lift-pawn.stl
-openSCAD my_chess_king.scad -o lift-king.stl
-openSCAD my_chess_queen.scad -o lift-queen.stl
-openSCAD my_chess_bishop.scad -o lift-bishop.stl
-openSCAD my_chess_knight.scad -o lift-knight.stl
-openSCAD my_chess_rook.scad -o lift-rook.stl

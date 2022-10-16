@@ -10,7 +10,7 @@ DEFAULT_KING_HEIGHT = 88;
 //Parameters based on set scaling and magnet size
 //DEFAULT_MAGNET_DIA=10.2;
 //DEFAULT_MAGNET_H=2;
-DEFAULT_MAGNET_DIA=6.1;
+DEFAULT_MAGNET_DIA=6.3;
 DEFAULT_MAGNET_H=2;
 
 // this is how far into the piece the magnet is "lifted" zero for a hole in the bottom,

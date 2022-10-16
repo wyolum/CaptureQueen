@@ -1,0 +1,8 @@
+#!/bin/bash
+cp defaults_full.scad defaults.scad
+openSCAD my_chess_pawn.scad -o full-pawn.stl
+openSCAD my_chess_king.scad -o full-king.stl
+openSCAD my_chess_queen.scad -o full-queen.stl
+openSCAD my_chess_bishop.scad -o full-bishop.stl
+openSCAD my_chess_knight.scad -o full-knight.stl
+openSCAD my_chess_rook.scad -o full-rook.stl
