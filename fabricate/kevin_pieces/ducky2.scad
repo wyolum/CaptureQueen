@@ -7,7 +7,7 @@ module ducky(){
           import(file = "profiles/my_knight_profile_0.svg");
         }
         difference(){
-            translate([0,0,24])rotate([-25.0,0])scale([.25,.25,.25])import("Rubber_Duck.stl");
+            translate([0,0,24])rotate([0,0,0])scale(.3)import("Rubber_Duck.stl");
             cylinder(d=40,h=15);
         }
 }
