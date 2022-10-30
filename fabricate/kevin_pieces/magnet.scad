@@ -38,7 +38,7 @@ module hex_pocket(o=.4){
     translate([0,0,o])cylinder(d=16, h=20);
 }
 module penny_pocket(o=.4,n=5){
-    translate([0,0,o])cylinder($fn =99, d=19.5,h=1.4*n+.2);
+    translate([0,0,o])cylinder($fn =99, d=19.5,h=1.5*n+.2);
 }
 /*
 difference(){
