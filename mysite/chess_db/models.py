@@ -13,6 +13,7 @@ class Game(models.Model):
     Annotator = models.CharField(max_length=80)
     Variant = models.CharField(max_length=80, default="Standard")
     TimeControl = models.CharField(max_length=40, default="300+0")
+    MoveCount = models.IntegerField(default=0)
     
     def __init__(self, *args, **kw):
         models.Model.__init__(self, *args,**kw)
@@ -20,8 +21,8 @@ class Game(models.Model):
         self.max_ply = self.n_move - 1
         self.pgn = chess_db_functions.get_pgn(self.id)
         lines = self.pgn.splitlines()
-        if len(lines) > 12:
-            lines = lines[:10] + ['...', lines[-1]]
+        if len(lines) > 14:
+            lines = lines[:12] + ['...', lines[-1]]
         self.abreviated_pgn = '\n'.join(lines)
         self.final_image = chess_db_functions.get_final_image(self.id, size=250)
     def __str__(self):
@@ -49,8 +50,7 @@ Game("{self.id},"{self.White}","{self.Black}", ...)'''
         for move in moves:
             out.append(str(move))
         return '\n'.join(out)
-        
-      
+
 
 class Move(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE)
@@ -59,6 +59,9 @@ class Move(models.Model):
 
     class Meta:
         unique_together = ('game_id', 'ply')
+        
+    def __init__(self, *args, **kw):
+        models.Model.__init__(self, *args,**kw)
         
     def __str__(self):
         move_number = self.ply // 2 + 1

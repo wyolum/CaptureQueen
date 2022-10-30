@@ -133,6 +133,8 @@ class ClockBoard:
     def set_fen(self, fen):
         self.board = chess.Board(fen)
 
+    def draw(self):
+        print("todo::draw()")
     def resign(self, color):
         self.__resign = color
         if color == chess.WHITE:
@@ -362,9 +364,7 @@ fen = clock_board.fen()
 open('.fen', 'w').write(fen)
 
 
-last_rectified = None
-def find_move(rectified):
-    global last_rectified
+def find_move(rectified, last_rectified):
     if last_rectified is not None:
         delta = cv2.absdiff(rectified, last_rectified)
         sum_delta = np.sum(delta)
@@ -374,7 +374,6 @@ def find_move(rectified):
         thresh = np.max(delta, axis=-1)
     else:
         thresh = None
-    last_rectified = rectified.copy()
 
     changes = []
     if thresh is None:
@@ -420,6 +419,35 @@ def find_move(rectified):
         sorted = np.argsort([c[2] for c in candidates])
         candidates = [candidates[i] for i in sorted]
         out = candidates[-1][0].uci()
+    return out
+
+last_rectified = None
+def find_move_and_update_board():
+    global last_rectified
+    moves = []
+    start = time.time()
+    for i in range(2):
+        ret, frame = vid.read() 
+        rectified = cv2.warpPerspective(frame, perspective_matrix,
+                                        (IM_HEIGHT, IM_HEIGHT),
+                                        flags=cv2.INTER_LINEAR)
+        out = find_move(rectified, last_rectified)
+        moves.append(out)
+    if moves[0] != moves[1]:
+        ret, frame = vid.read() 
+        rectified = cv2.warpPerspective(frame, perspective_matrix,
+                                        (IM_HEIGHT, IM_HEIGHT),
+                                        flags=cv2.INTER_LINEAR)
+        tie_break = find_move(rectified, last_rectified)
+        if tie_break == moves[0]:
+            out = moves[0]
+        elif tie_break == moves[1]:
+            out = moves[1]
+        else:
+            out = None
+        
+    #print(time.time() - start)
+    last_rectified = rectified.copy()
     if out is not None:
         if False: ## cool image of changes since last image
             draw_square(thresh, out[0:2], WHITE, 1)
@@ -435,6 +463,8 @@ IM_WIDTH = 640
 IM_HEIGHT = 480
 vid.set(cv2.CAP_PROP_FRAME_WIDTH, IM_WIDTH)
 vid.set(cv2.CAP_PROP_FRAME_HEIGHT, IM_HEIGHT)
+#vid.set(cv2.CAP_PROP_ISO_SPEED, 100)
+vid.set(cv2.CAP_PROP_EXPOSURE, 15)
 
 move_number = 0
 
@@ -587,10 +617,44 @@ game_on = False
 __last_move = False
 
 def get_rectified():
+    global last_rectified
     ret, frame = vid.read()
     rectified = cv2.warpPerspective(frame, perspective_matrix,
                                (IM_HEIGHT, IM_HEIGHT),
                                flags=cv2.INTER_LINEAR)
+    n_zeros = 0
+    max_zeros = 10
+    while True: ## check for motion
+        if last_rectified is None:
+            break
+        ret, new_frame = vid.read()
+
+        new_rectified = cv2.warpPerspective(new_frame, perspective_matrix,
+                                            (IM_HEIGHT, IM_HEIGHT),
+                                            flags=cv2.INTER_LINEAR)
+        delta1 = cv2.absdiff(rectified, new_rectified) ### compare to last frame
+        delta2 = cv2.absdiff(last_rectified,
+                            new_rectified) ### compare to last move
+        threshold = 30
+        max_value = 255
+        sum_deltas = []
+        for delta in [delta1, delta2]:
+            thresh = cv2.threshold(delta, threshold, max_value,
+                                   cv2.THRESH_BINARY)[1]
+            sum_delta = np.sum(thresh)
+            sum_deltas.append(sum_delta)
+            #print(sum_delta, end=' ')
+        #print()
+        rectified = new_rectified
+        if sum_deltas[0] < 10 and sum_deltas[1] < 10e6:
+            break
+        if sum_deltas[0] == 0:
+            n_zeros += 1
+            if n_zeros > max_zeros:
+                last_rectified = None
+                break
+        else: ## give up after all motion has stopped for a while!
+            n_zeros = 0
     return rectified
 
 def render(renderer, board, side, colors):
@@ -756,7 +820,7 @@ while True:
         update_camera_view(rectified)
     if 'capture_queen.draw' in mqtt_events:
         clock_board.draw()
-        mqtt_clock_pause()
+        mqtt_clock_pause(True)
         
     if 'capture_queen.resign' in mqtt_events:
         color = mqtt_events['capture_queen.resign'][0] == 'True'
@@ -773,17 +837,8 @@ while True:
             update_camera_view(rectified)
         game_on = True
         cv2.destroyWindow("Previous Moves")
-        for i in range(1):
-            ret, frame = vid.read() ## clear buffer
-            
-        png = f'captures/{game_id:04d}_{move_number:04d}.png'
-        rectified = cv2.warpPerspective(frame, perspective_matrix,
-                                   (IM_HEIGHT, IM_HEIGHT),
-                                   flags=cv2.INTER_LINEAR)
-        move = find_move(rectified)
-        move_number = len(clock_board.move_stack)
-        write_position_image(rectified, game_id, move_number)
 
+        move = find_move_and_update_board()
         if move:
             __last_move = move
             fen = clock_board.fen()
@@ -791,9 +846,9 @@ while True:
             draw_square(rectified, __last_move[0:2], RED, 1)
             draw_square(rectified, __last_move[2:4], RED, 1)
             update_camera_view(rectified)
-
-        # put render in background thread so that image-capture is not blocked
-        render(renderers, clock_board, side, colors)
+            move_number = len(clock_board.move_stack)
+            write_position_image(rectified, game_id, move_number)
+            render(renderers, clock_board, side, colors)
         
     if not game_on:
         pass
@@ -812,6 +867,7 @@ while True:
     if 'capture_queen.reset_pi' in mqtt_events:
         white_ms = initial_seconds * 1000
         black_ms = initial_seconds * 1000
+        last_rectified = None
         old_board = None
         print('restart')
         fen = clock_board.fen()

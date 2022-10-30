@@ -22,10 +22,10 @@ def get_game_id(date):
     sql = f'''\
     INSERT INTO {rename("Game")}
         (Event, Site, Date, White, Black, 
-         Result, Termination, Annotator, Variant, TimeControl) 
+         Result, Termination, Annotator, Variant, TimeControl, MoveCount) 
     VALUES 
         ("CaptureQueen OTB", "NA", "{date}", "White", "Black",
-         "NA", "NA", "CaptureQueen", "Standard", "300+0")'''
+         "NA", "NA", "CaptureQueen", "Standard", "300+0", 0)'''
     cur = db.execute(sql)
     out = cur.lastrowid
     db.commit()
@@ -68,6 +68,12 @@ def move(game_id, ply, clockmove):
             ({game_id}, {ply}, "{clockmove}")
         '''
     db.execute(sql)
+    sql = f'''\
+UPDATE {rename("Game")}
+SET MoveCount = {ply}  + 1
+WHERE id={game_id}
+'''
+    db.execute(sql)
     db.commit()
 
 def get_pgn(game_id):
@@ -77,6 +83,8 @@ def get_pgn(game_id):
     sql = f'SELECT * FROM {rename("Game")} WHERE rowid = {game_id}'
     cur = db.execute(sql)
     row = cur.fetchone()
+    if row is None:
+        return
     cols = [r[0] for r in cur.description]
     out = []
     for i, col in enumerate(cols):

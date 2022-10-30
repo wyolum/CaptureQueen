@@ -20,13 +20,7 @@ def index(request):
         cur = db.execute(sql)
         result = cur.fetchall()
 
-    latest_game_list = Game.objects.order_by('-Date')
-    keepers = []
-    for i, game in enumerate(latest_game_list):
-        n_move = Move.objects.filter(game_id=game.id).count()
-        if n_move > 0:
-            keepers.append(i)
-    latest_game_list = [latest_game_list[i] for i in keepers]
+    latest_game_list = Game.objects.filter(MoveCount__gte=3).order_by('-Date')
     paginator = Paginator(latest_game_list, 6)
     games = paginator.page(page)
     
