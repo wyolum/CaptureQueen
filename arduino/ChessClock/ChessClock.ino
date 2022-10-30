@@ -7,14 +7,18 @@ const int CLK=5;
 const int DIO=4;
 const int CLK1=2;
 const int DIO1=16;
-long initial_seconds = 5;
-long increment_seconds = 5;
+//long initial_seconds = 300;
+long initial_seconds = 300;
+long increment_seconds = 0;
 long counter_ms[2] = {initial_seconds * 1000, initial_seconds * 1000};
 long counter_seconds[2];
 int halfmove_number = 0;
+int last_interaction_ms = 0;
 
 const int WHITE = 0;
 const int BLACK = 1;
+const int player_0_pin = 14;
+const int player_1_pin = 0;
 
 int players[2]; // if {0, 1} player0 is white, player1 is black, else 0-black, 1-white
 
@@ -197,7 +201,10 @@ void setup_wifi() {
   delay(10);
   // We start by connecting to a WiFi network
   // reset network?
-  wifiManager.resetSettings();
+  if(!digitalRead(player_0_pin) && !digitalRead(player_1_pin)){
+    wifiManager.resetSettings();
+  }
+    
   wifiManager.autoConnect("CaptureQueen");
 
   Serial.println("Yay connected!");
@@ -288,54 +295,43 @@ void display_setup(){
 }
 
 uint8_t ZEROS[] = {0, 0, 0, 0};
+void set_display(int display_num, TM1637Display display, int counter_ms){
+  int counter_seconds;
+  
+  counter_seconds = counter_ms / 1000;
+  
+  if(counter_ms >= 60000){ // longer than 10 minutes display mm:ss
+    if(counter_seconds >= 3600){ // longer than an hour display hh:mm
+      int colen = (millis() % 1000 < 500) * 0x40;
+      bool myturn = (display_num == turn);
+      if(!myturn or paused){ // keep other colen steady on
+	colen = 0x40;
+      }
+      
+      int hh = counter_seconds / 3600;
+      int mm = (counter_seconds / 60) % 60;
+      display.showNumberDecEx(hh, colen, false, 2, 0);
+      display.showNumberDecEx(mm, colen, true, 2, 2);
+    }
+    else{
+      display.showNumberDecEx(counter_seconds  % 60, 0x40, true, 2, 2);
+      display.showNumberDecEx(counter_seconds / 60, 0x40, true, 2, 0);
+    }
+  }
+  else{
+    display.setSegments(ZEROS, 1, 3);
+    display.showNumberDecEx((counter_ms / 100), 0xFF, false, 3, 0);
+  }
+}
 void display_loop(){
-  counter_seconds[0] = counter_ms[0] / 1000;
-  counter_seconds[1] = counter_ms[1] / 1000;
-
-  if(counter_ms[0] >= 60000){
-    if(counter_seconds[0] >= 3600){ // display hh:mm
-      int colen = (millis() % 1000 < 500) * 0x40;
-      if(turn != 0){ // keep other colen steady on
-	colen = 0x40;
-      }
-      int hh = counter_seconds[0] / 3600;
-      int mm = (counter_seconds[0] / 60) % 60;
-      display0.showNumberDecEx(hh, colen, false, 2, 0);
-      display0.showNumberDecEx(mm, colen, true, 2, 2);
-    }
-    else{
-      display0.showNumberDecEx(counter_seconds[0]  % 60, 0x40, true, 2, 2);
-      display0.showNumberDecEx(counter_seconds[0] / 60, 0x40, true, 2, 0);
-    }
-  }
-  else{
-    display0.setSegments(ZEROS, 1, 3);
-    display0.showNumberDecEx((counter_ms[0] / 100), 0xFF, false, 3, 0);
-  }
-  if(counter_ms[1] >= 60000){
-    if(counter_seconds[1] >= 3600){ // display hh:mm
-      int colen = (millis() % 1000 < 500) * 0x40;
-      if(turn != 1){ // keep other colen steady on
-	colen = 0x40;
-      }
-      int hh = counter_seconds[1] / 3600;
-      int mm = (counter_seconds[1] / 60) % 60;
-      display1.showNumberDecEx(hh, colen, false, 2, 0);
-      display1.showNumberDecEx(mm, colen, true, 2, 2);
-    }
-    else{
-      display1.showNumberDecEx(counter_seconds[1] % 60, 0x40, true, 2, 2);
-      display1.showNumberDecEx(counter_seconds[1] / 60, 0x40, true, 2, 0);
-    }
-  }
-  else{
-    display1.setSegments(ZEROS, 1, 3);
-    display1.showNumberDecEx((counter_ms[1] / 100), 0xFF, false, 3, 0);
-  }
+  set_display(0, display0, counter_ms[0]);
+  set_display(1, display1, counter_ms[1]);
 }
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length) {
   bool handled = false;
+
+  last_interaction_ms = millis();
 
   Serial.print("Message arrived [");
   Serial.print(topic);
@@ -362,21 +358,21 @@ void setup_mqtt(){
   mqtt_client.setCallback(mqtt_callback);
   mqtt_connect();
 }
-const int player_0_pin = 14;
-const int player_1_pin = 0;
 
-
+void button_setup(){
+  pinMode(player_0_pin, INPUT_PULLUP);
+  pinMode(player_1_pin, INPUT_PULLUP);
+  pinMode(13, OUTPUT);
+  digitalWrite(13, LOW);
+}
 void setup(){
+  button_setup();
   Serial.begin(115200);delay(10);
   Serial.println("\n\n\nCapture Queen, open hardware.\n\n\n");
   setup_wifi();
   setup_mqtt();
   
   
-  pinMode(player_0_pin, INPUT_PULLUP);
-  pinMode(player_1_pin, INPUT_PULLUP);
-  pinMode(13, OUTPUT);
-  digitalWrite(13, LOW);
   display_setup();
   new_game();
 }
@@ -425,8 +421,10 @@ void game_over(){
   new_game();
 }
 
+const int TIMEOUT_MS = 5 * 60000;
 int buttons[2] = {player_0_pin, player_1_pin};
 int last_time_ms = 0;
+
 void loop(){
   int button_state[2];
 
@@ -438,6 +436,9 @@ void loop(){
   if(paused){ // game paused... unpause game, start other timer
     button_state[0] = digitalRead(player_0_pin);
     button_state[1] = digitalRead(player_1_pin);
+    if(button_state[0] == 0 || button_state[1] == 0){
+      last_interaction_ms = millis();
+    }
     if(halfmove_number > 0){ // only check one button for current player
       turn = halfmove_number % 2;
       if(button_state[turn] == 0){
@@ -480,10 +481,12 @@ void loop(){
       turn %= 2;
       mqtt_publish_state();      
     }
-    int now_ms = millis();
-    int delta_ms = (now_ms - last_time_ms) * (1 - paused);
-    counter_ms[turn]-= delta_ms;
-    last_time_ms = now_ms;
+    if(initial_seconds > 0){
+      int now_ms = millis();
+      int delta_ms = (now_ms - last_time_ms) * (1 - paused);
+      counter_ms[turn]-= delta_ms;
+      last_time_ms = now_ms;
+    }
   }
   if (counter_ms[0] < 0){
     game_over();
@@ -497,5 +500,28 @@ void loop(){
   }
   display_loop();
   mqtt_client.loop();
-  
+  if(paused && millis() - last_interaction_ms > TIMEOUT_MS){
+    sleep();
+  }
+}
+
+void sleep(){
+  bool asleep = true;
+  display0.clear();
+  display1.clear();
+  Serial.println("Going to sleep");
+  while(asleep){
+    if(digitalRead(player_0_pin) == 0 ||
+       digitalRead(player_1_pin) == 0){
+      asleep = false;
+      display_loop();
+      while(digitalRead(player_0_pin) == 0 ||
+	    digitalRead(player_1_pin) == 0){
+	delay(100); // don't go on untill button is no longer pressed
+      }
+    }
+    delay(100);
+  }
+  Serial.println("Waking up");
+  last_interaction_ms = millis();
 }
