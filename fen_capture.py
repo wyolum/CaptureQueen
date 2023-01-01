@@ -71,10 +71,6 @@ black_player = args.black
 time_control = args.time_control
 initial_seconds, increment_seconds = map(int, time_control.split('+'))
 
-def imshow(name, frame):
-    if display_on:
-        cv2.imshow(name, frame)
-
 ### register with wyolum
 def getip():
     import socket
@@ -290,65 +286,6 @@ def mqtt_gather_events():
 mqtt_subscribe(on_mqtt)
 mqtt_start()
 
-def get_board_bbox():
-    delta = IM_HEIGHT / 9
-    bbox = (np.array([
-        [-0.5,  7.5],
-        [-0.5, -0.5],
-        [ 7.5, -0.5],
-        [ 7.5,  7.5],
-    ]) + 1) * delta
-    return bbox
-
-def get_abs_bbox(i, j):
-    delta = IM_HEIGHT / 9
-    coords = np.array([[-1, -1],
-                       [-1,  1],
-                       [ 1,  1],
-                       [ 1, -1]]) / 6 + np.array([i, j])
-    bbox = coords * delta
-    return bbox.astype(int)
-
-### flip_board
-### If True, the right side of board from camera view point is toward the
-### bottom of the board.
-### If False, the left side of the board is toward the bottom
-
-flip_board = False 
-side = chess.WHITE
-def get_bbox(alg):
-    i = ord(alg[0]) - ord('a') + 1
-    j = 9 - int(alg[1])
-    if side == chess.BLACK:
-        j = 9 - j
-        i = 9 - i
-    bbox = get_abs_bbox(i, j)
-    return bbox
-
-def draw_abs_square(rectified, i, j, color, thickness):
-    bbox = get_abs_bbox(i, j)
-    cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
-    
-def draw_square(rectified, alg, color, thickness):
-    bbox = get_bbox(alg)
-    cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), color, thickness)
-
-def crop_abs_square(rectified, i, j):
-    bbox = get_abs_bbox(i, j)
-    starts = np.min(bbox, axis=0).astype(int)
-    stops = np.max(bbox, axis=0).astype(int) + 1
-    bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-    out = rectified[starts[1]:stops[1],starts[0]:stops[0]], bbox
-    return out
-    
-def crop_square(rectified, alg):
-    bbox = get_bbox(alg)
-    starts = np.min(bbox, axis=0).astype(int)
-    stops = np.max(bbox, axis=0).astype(int) + 1
-    bbox = bbox.reshape((1, -1, 1, 2)).astype(np.int32)
-    out = rectified[starts[1]:stops[1],starts[0]:stops[0]], bbox
-    return out
-        
 RED = (0, 0, 255)
 GREEN = (0, 255, 0)
 BLUE = (255, 0, 0)
@@ -367,6 +304,8 @@ open('.fen', 'w').write(fen)
 def find_move(rectified, last_rectified):
     if last_rectified is not None:
         delta = cv2.absdiff(rectified, last_rectified)
+        if True:
+            imshow("delta", delta)
         sum_delta = np.sum(delta)
         BUMP_THRESH = 10000000
         if sum_delta > BUMP_THRESH:
