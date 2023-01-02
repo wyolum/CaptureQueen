@@ -26,6 +26,7 @@ import chess_db_functions as chess_db
 from board_map import fit, predict
 import kicker
 import defaults
+import chesscam
 
 desc = 'Capture Queen: Over-the-board real-time chess capture system.'
 shortcuts = '''\
@@ -280,7 +281,7 @@ def mqtt_gather_events():
             out[msg.topic] = []
         payload = msg.payload.decode('utf-8')
         out[msg.topic].append(payload)
-        #print(msg.topic, payload)
+        print(msg.topic, payload)
     return out
 
 mqtt_subscribe(on_mqtt)
@@ -304,8 +305,8 @@ open('.fen', 'w').write(fen)
 def find_move(rectified, last_rectified):
     if last_rectified is not None:
         delta = cv2.absdiff(rectified, last_rectified)
-        if True:
-            imshow("delta", delta)
+        if False:
+            cv2.imshow("delta", delta)
         sum_delta = np.sum(delta)
         BUMP_THRESH = 10000000
         if sum_delta > BUMP_THRESH:
@@ -324,24 +325,29 @@ def find_move(rectified, last_rectified):
         if move.promotion and move.promotion != chess.QUEEN:
             continue
         uci = move.uci()
-        sq0, bbox0 = crop_square(thresh, uci[:2])
-        sq1, bbox1 = crop_square(thresh, uci[2:4])
+        sq0, bbox0 = cam.crop_square(thresh, uci[:2])
+        if (cam.square_occupied(uci[:2], rectified) or
+            not cam.square_occupied(uci[2:4], rectified)):
+            #print('not this move:', uci, cam.square_occupied(uci[:2], rectified),
+            #      cam.square_occupied(uci[2:4], rectified))
+            continue
+        sq1, bbox1 = cam.crop_square(thresh, uci[2:4])
         sqs = [sq0, sq1]
         if clock_board.is_castling(move):
             if uci[2] == 'g': ## kingside
                 row = uci[3]
-                sq2, bbox2 = crop_square(thresh, f'h{row}')
-                sq3, bbox3 = crop_square(thresh, f'f{row}')
+                sq2, bbox2 = cam.crop_square(thresh, f'h{row}')
+                sq3, bbox3 = cam.crop_square(thresh, f'f{row}')
                 sqs.extend([sq2, sq3])
             if uci[2] == 'c': ## queen
                 row = uci[3]
-                sq2, bbox2 = crop_square(thresh, f'a{row}')
-                sq3, bbox3 = crop_square(thresh, f'd{row}')
+                sq2, bbox2 = cam.crop_square(thresh, f'a{row}')
+                sq3, bbox3 = cam.crop_square(thresh, f'd{row}')
                 sqs.extend([sq2, sq3])
         if clock_board.is_en_passant(move):
             col = uci[2]
             row = uci[1]
-            sq2, bbox2 = crop_square(thresh, f'{col}{row}')
+            sq2, bbox2 = cam.crop_square(thresh, f'{col}{row}')
             sqs.append(sq2)
             
         change = np.array([int(np.sum(sq)) for sq in sqs])
@@ -365,18 +371,13 @@ def find_move_and_update_board():
     global last_rectified
     moves = []
     start = time.time()
-    for i in range(2):
-        ret, frame = vid.read() 
-        rectified = cv2.warpPerspective(frame, perspective_matrix,
-                                        (IM_HEIGHT, IM_HEIGHT),
-                                        flags=cv2.INTER_LINEAR)
+    for i in range(1):
+        rectified = cam.capture_rectified()
         out = find_move(rectified, last_rectified)
         moves.append(out)
+    moves.append(out) ### just take one?
     if moves[0] != moves[1]:
-        ret, frame = vid.read() 
-        rectified = cv2.warpPerspective(frame, perspective_matrix,
-                                        (IM_HEIGHT, IM_HEIGHT),
-                                        flags=cv2.INTER_LINEAR)
+        rectified = cam.capture_rectified()
         tie_break = find_move(rectified, last_rectified)
         if tie_break == moves[0]:
             out = moves[0]
@@ -385,25 +386,19 @@ def find_move_and_update_board():
         else:
             out = None
         
-    #print(time.time() - start)
+    print(f'{(time.time() - start) * 1000:.0f}ms')
     last_rectified = rectified.copy()
     if out is not None:
         if False: ## cool image of changes since last image
             draw_square(thresh, out[0:2], WHITE, 1)
             draw_square(thresh, out[2:4], WHITE, 1)
-            imshow("thresh", thresh) 
+            cv2.imshow("thresh", thresh) 
         clock_board.push_uci(out, white_ms, black_ms)
         fen = clock_board.fen()
         print(fen, file=open(".fen", 'w'), flush=True)
     return out
 
-vid = cv2.VideoCapture(0)
-IM_WIDTH = 640
-IM_HEIGHT = 480
-vid.set(cv2.CAP_PROP_FRAME_WIDTH, IM_WIDTH)
-vid.set(cv2.CAP_PROP_FRAME_HEIGHT, IM_HEIGHT)
-#vid.set(cv2.CAP_PROP_ISO_SPEED, 100)
-vid.set(cv2.CAP_PROP_EXPOSURE, 15)
+cam = chesscam.ChessCam()
 
 move_number = 0
 
@@ -412,165 +407,46 @@ def check_flip():
     balance = 0
     for letter in 'abcdefgh':
         for row in [1, 2]:
-            balance += np.mean(crop_square(rectified, f'{letter}{row}')[0])
-            balance -= np.mean(crop_square(rectified, f'{letter}{9-row}')[0])
+            balance += np.mean(cam.crop_square(rectified, f'{letter}{row}')[0])
+            balance -= np.mean(cam.crop_square(rectified, f'{letter}{9-row}')[0])
     return balance < FLIP_THRESH
 
 def get_side():
     balance = 0
     for j in [1, 2]:
         for i in range(1, 9):
-            balance += np.mean(crop_abs_square(rectified, i, j)[0])
-            balance -= np.mean(crop_abs_square(rectified, i, 9-j)[0])
-            draw_abs_square(rectified, i, j, RED, 5)
-            draw_abs_square(rectified, i, 9-j, BLUE, 5)
+            balance += np.mean(cam.crop_abs_square(rectified, i, j)[0])
+            balance -= np.mean(cam.crop_abs_square(rectified, i, 9-j)[0])
+            cam.draw_abs_square(rectified, i, j, RED, 5)
+            cam.draw_abs_square(rectified, i, 9-j, BLUE, 5)
     if balance > 0:
         out = chess.BLACK
     else:
         out = chess.WHITE
     return out
 
-def findChessboardCorners(n_ave=1, max_tries=20):
-    print('Locating chessboard...')
-    all_corners = []
-    iter = 0
-    while len(all_corners) < n_ave and iter < max_tries:
-        print(f'iter: {iter}/{max_tries} {len(all_corners)}/{n_ave}')
-        ret, frame = vid.read()
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        ret, corners = cv2.findChessboardCorners(gray, (7, 7))
-        if ret:
-            font = getattr(cv2, defaults.font_name)
-            corners = corners.squeeze()
-            sort = corners[:,0] + IM_HEIGHT * corners[:,1]
-            corners = corners[np.argsort(sort)]
-            corners = corners.reshape((7, 7, 2))
-            for i, row in enumerate(corners):
-                row = row[np.argsort(row[:,0])]
-                corners[i] = row
-            all_corners.append(corners)
-        iter += 1
-    all_corners = np.array(all_corners)
-    corners = np.mean(all_corners, axis=0)
-
-    ret, image = vid.read()
-    font = getattr(cv2, defaults.font_name)
-    for i, row in enumerate(corners):
-        for j, c in enumerate(row):
-            pos = tuple(c.astype(int))
-            cv2.circle(image,  pos, 10, (56, 123, 26), 4)
-            
-            image = cv2.putText(image, f'{i}{j}', pos, font, 
-                                1, RED, 1, cv2.LINE_AA)
-
-    imshow('Corners', image)
-    return corners
-
-def centerup():
-    print("Center board in field of view.  Press 'q' to continue.")
-    font = getattr(cv2, defaults.font_name)
-    while 1:
-        ret, frame = vid.read()
-        frame = cv2.putText(frame, f'Calibrating camera ...',
-                            (150,40), font, 
-                            1, RED, 1, cv2.LINE_AA)
-        frame = cv2.putText(frame, f'... clear board,',
-                            (200,IM_HEIGHT//2 - 40), font, 
-                            1, RED, 1, cv2.LINE_AA)
-        frame = cv2.putText(frame, f'press "q" when centered.',
-                            (100,IM_HEIGHT//2), font, 
-                            1, RED, 1, cv2.LINE_AA)
-        
-        imshow('Calibrate', frame)
-        key = cv2.waitKey(1)
-        if key & 0xFF == ord('q'):
-            break
-
-def calibrate():
-    # Capture the video frame
-    centerup()
-    corners = findChessboardCorners(1)
-
-    ### extend 7x7 corners found in calibration to edge of board
-    ### using a polynomial fit
-    
-    ij = np.empty((49, 2))
-    xy = np.empty((49, 2))
-    for i, row in enumerate(corners):
-        for j, pos in enumerate(row):
-            pos = tuple(pos.astype(int))
-            ij[i * 7 + j] = i, j
-            xy[i * 7 + j] = pos
-    coeff = fit(ij, xy)
-
-    # find baord edge
-    coords = np.array([[-1.5, -1.5],
-                       [-1.5,  7.5],
-                       [ 7.5,  7.5],
-                       [ 7.5, -1.5]])[::-1]
-    bbox = predict(coords, coeff).astype(int)
-    input_pts = np.float32(np.roll(bbox, 0, axis=0))
-    output_pts = np.float32([[0, 0],
-                             [0, IM_HEIGHT - 1],
-                             [IM_HEIGHT - 1, IM_HEIGHT - 1],
-                             [IM_HEIGHT - 1, 0]])
-    M = cv2.getPerspectiveTransform(input_pts,output_pts)
-    font = getattr(cv2, defaults.font_name)
-    while True:
-        ret, frame = vid.read()
-        rectified = cv2.warpPerspective(frame, M, (IM_HEIGHT, IM_HEIGHT),
-                                   flags=cv2.INTER_LINEAR)        
-
-        rectified = cv2.putText(rectified, f'Press "q" to continue.',
-                                (10,IM_HEIGHT//2), font, 
-                                1, RED, 1, cv2.LINE_AA)
-        rectified = cv2.putText(rectified, f'Press "x" to redo.',
-                                (10,IM_HEIGHT//2 + 40), font, 
-                                1, RED, 1, cv2.LINE_AA)
-        imshow('Calibrate', rectified)
-        key = chr(cv2.waitKey(1) & 0xFF)
-        if key == 'q':
-            break
-        if key == 'x':
-            calibrate()
-            break
-    return M, coeff
-
-cal_npz = 'perspective_matrix.npz'
 if args.calibrate:
     print('Calibrate')
-    perspective_matrix, ij_coeff = calibrate()
-    np.savez(cal_npz, perspective_matrix=perspective_matrix)
-    print('wrote', cal_npz)
-    print('Calibaration complete.  You may now set up board.')
-    cv2.destroyAllWindows()
+    cam.calibrate()
 else:
     print("Skipping calibration")
 
 kicker.kick('pyqt_mqtt_chess.py')
 kicker.kick('mysite/manage.py', args=('runserver',))
     
-perspective_matrix = np.load(cal_npz)['perspective_matrix']
-
 game_on = False
 __last_move = False
 
 def get_rectified():
     global last_rectified
-    ret, frame = vid.read()
-    rectified = cv2.warpPerspective(frame, perspective_matrix,
-                               (IM_HEIGHT, IM_HEIGHT),
-                               flags=cv2.INTER_LINEAR)
+    rectified = cam.capture_rectified()
+    
     n_zeros = 0
     max_zeros = 10
     while True: ## check for motion
         if last_rectified is None:
             break
-        ret, new_frame = vid.read()
-
-        new_rectified = cv2.warpPerspective(new_frame, perspective_matrix,
-                                            (IM_HEIGHT, IM_HEIGHT),
-                                            flags=cv2.INTER_LINEAR)
+        new_rectified = cam.capture_rectified()
         delta1 = cv2.absdiff(rectified, new_rectified) ### compare to last frame
         delta2 = cv2.absdiff(last_rectified,
                             new_rectified) ### compare to last move
@@ -598,7 +474,7 @@ def get_rectified():
 
 def render(renderer, board, side, colors):
     thread = threading.Thread(target=renderer.render,
-                              args=(board,side==chess.BLACK and not flip_board),
+                              args=(board,side==chess.BLACK and not cam.flip_board),
                               kwargs={'colors':colors},
                               daemon=True)
     thread.start()
@@ -625,11 +501,12 @@ colors = {'square dark':dark_red,
 colors = defaults.colors          
 
 def update_camera_view(rectified):
-    if flip_board:
+    return
+    if cam.flip_board:
         view = rectified[::-1, ::-1]
     else:
         view = rectified
-    imshow('view', view)
+    cv2.imshow('view', view)
     
 side = get_side()
 
@@ -653,9 +530,20 @@ def read_position_image(game_id, move_number):
 
 white_ms = initial_seconds * 1000
 black_ms = initial_seconds * 1000
+last_time_timer = time.time()
+def tick(label):
+    now = time.time()
+    elap = now - tick.last_tick
+    print(f'{label:20s}: {elap:.1f} s')
+    tick.last_tick = now
+tick.last_tick = time.time()
 while True:
+    tick('start')
+    last_time_timer = time.time()
     key = chr(cv2.waitKey(1) & 0xFF)
+    tick('waitkey')
     mqtt_events = mqtt_gather_events()
+    tick('mqqt_events')
     clock_hit = False
     if 'capture_queen.underpromote' in mqtt_events:
         msg = mqtt_events['capture_queen.underpromote'][0].strip()
@@ -697,8 +585,8 @@ while True:
         if im is not None:
             if clock_move is not None:
                 uci = clock_move.uci()
-                draw_square(im, uci[0:2], RED, 1)
-                draw_square(im, uci[2:4], RED, 1)
+                cam.draw_square(im, uci[0:2], RED, 1)
+                cam.draw_square(im, uci[2:4], RED, 1)
             
             #imshow("Previous Moves", im)
     if key == 'S' or 'capture_queen.goforward' in mqtt_events:
@@ -719,8 +607,8 @@ while True:
                 im = read_position_image(game_id, move_number)
                 if im is not None:
                     uci = clock_move.uci()
-                    draw_square(im, uci[0:2], RED, 1)
-                    draw_square(im, uci[2:4], RED, 1)
+                    cam.draw_square(im, uci[0:2], RED, 1)
+                    cam.draw_square(im, uci[2:4], RED, 1)
                     #imshow("Previous Moves", im)
                 
             render(renderers, clock_board, side, colors)
@@ -734,8 +622,10 @@ while True:
             clock_board.set_timeout(white_ms, black_ms)
         clock_hit = True
         old_board = None
-    
+
+    tick('pre get_rect')    
     rectified = get_rectified()
+    tick('post get_rect')        
     if not game_on:
         ranks = str(clock_board).splitlines()[:8]
         for j, rank in enumerate(ranks):
@@ -748,13 +638,13 @@ while True:
                         color = WHITE
                     else:
                         color = GRAY
-                    draw_square(rectified, f'{letter}{number}', color, 2)
+                    cam.draw_square(rectified, f'{letter}{number}', color, 2)
         #for i in [1, 2]:
         #    for letter in 'abcdefgh':
-        #        draw_square(rectified, f'{letter}{i}', WHITE, 2)
-        #        draw_square(rectified, f'{letter}{9-i}', GRAY, 2)
+        #        cam.draw_square(rectified, f'{letter}{i}', WHITE, 2)
+        #        cam.draw_square(rectified, f'{letter}{9-i}', GRAY, 2)
 
-        bbox = get_board_bbox().astype(int)
+        bbox = cam.get_board_bbox().astype(int)
         cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
         update_camera_view(rectified)
     if 'capture_queen.draw' in mqtt_events:
@@ -777,13 +667,15 @@ while True:
         game_on = True
         cv2.destroyWindow("Previous Moves")
 
+        tick('pre move')
         move = find_move_and_update_board()
+        tick('post move')
         if move:
             __last_move = move
             fen = clock_board.fen()
             open('.fen', 'w').write(fen)
-            draw_square(rectified, __last_move[0:2], RED, 1)
-            draw_square(rectified, __last_move[2:4], RED, 1)
+            cam.draw_square(rectified, __last_move[0:2], RED, 1)
+            cam.draw_square(rectified, __last_move[2:4], RED, 1)
             update_camera_view(rectified)
             move_number = len(clock_board.move_stack)
             write_position_image(rectified, game_id, move_number)
@@ -800,7 +692,7 @@ while True:
             side = chess.WHITE
         render(renderers, clock_board, side, colors)
     if key == 'f':
-        flip_board = not flip_board
+        cam.flip_board = not cam.flip_board
         update_camera_view(rectified)
         render(renderers, clock_board, side, colors)
     if 'capture_queen.reset_pi' in mqtt_events:
@@ -834,7 +726,5 @@ while True:
     # the 'q' button is set as the
     # quitting button you may use any
     # desired button of your choice
-# After the loop release the cap object
-vid.release()
 # Destroy all the windows
 cv2.destroyAllWindows()

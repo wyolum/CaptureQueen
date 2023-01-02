@@ -1,7 +1,10 @@
+import sys
+import time
 import pylab as pl
 import numpy as np
 import chess
 import cv2
+import argparse
 
 from colors import RED, GREEN, BLUE, CYAN, PURPLE, WHITE, BLACK, GRAY
 import defaults
@@ -20,6 +23,28 @@ BBOX = (np.array([
 ]) + 1) * DELTA
 
 
+
+def clearCapture(capture):
+    capture.release()
+    cv2.destroyAllWindows()
+
+def countCameras():
+    n = 0
+    for i in range(10):
+        try:
+            cap = cv2.VideoCapture(i)
+            ret, frame = cap.read()
+            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            clearCapture(cap)
+            n += 1
+        except:
+            clearCapture(cap)
+            break
+    return n
+
+#n_cam = countCameras() ### this hangs up the camera :-(
+n_cam = 1
+
 class ChessCam:
     ### flip_board
     ### If True, the right side of board from camera view point is toward the
@@ -34,7 +59,7 @@ class ChessCam:
         self.vid = cv2.VideoCapture(camera_number)
         self.vid.set(cv2.CAP_PROP_FRAME_WIDTH, IM_WIDTH)
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, IM_HEIGHT)
-        self.vid.set(cv2.CAP_PROP_EXPOSURE, 15)
+        #self.vid.set(cv2.CAP_PROP_EXPOSURE, 15)
         self.cal_npz = cal_npz
 
 
@@ -61,7 +86,7 @@ class ChessCam:
         if self.side == chess.BLACK:
             j = 9 - j
             i = 9 - i
-        bbox = get_abs_bbox(i, j)
+        bbox = self.get_abs_bbox(i, j)
         return bbox
 
     def draw_abs_square(self, rectified, i, j, color, thickness):
@@ -89,8 +114,24 @@ class ChessCam:
         return out
 
 
+    def capture_raw(self):
+        frame = None
+        for i in range(10):
+            ret, frame = self.vid.read()
+            if frame is not None:
+                break
+            else:
+                print(i, '...')
+                time.sleep(1)
+        if frame is None:
+            raise ValueError("Can't read camera image")
+        #frame = cv2.rotate(frame, cv2.ROTATE_180)
+        frame = cv2.flip(frame, 0)
+        frame = cv2.flip(frame, 1)
+        return frame
     def capture_rectified(self):
-        ret, frame = self.vid.read() 
+        frame = self.capture_raw()
+        
         rectified = cv2.warpPerspective(frame, self.perspective_matrix,
                                         (IM_HEIGHT, IM_HEIGHT),
                                         flags=cv2.INTER_LINEAR)
@@ -103,16 +144,19 @@ class ChessCam:
         print("Center board in field of view.  Press 'q' to continue.")
         font = getattr(cv2, defaults.font_name)
         while 1:
-            ret, frame = self.vid.read()
+            frame = self.capture_raw()
             frame = cv2.putText(frame, f'Calibrating camera ...',
                                 (150,40), font, 
                                 1, RED, 1, cv2.LINE_AA)
-            frame = cv2.putText(frame, f'... clear board,',
+            frame = cv2.putText(frame, f'... setup board,',
                                 (200,IM_HEIGHT//2 - 40), font, 
                                 1, RED, 1, cv2.LINE_AA)
             frame = cv2.putText(frame, f'press "q" when centered.',
-                                (100,IM_HEIGHT//2), font, 
+                                (100,IM_HEIGHT//2+40), font, 
                                 1, RED, 1, cv2.LINE_AA)
+            pos = (IM_WIDTH // 2, IM_HEIGHT//2)
+            frame = cv2.circle(frame,  pos, 10, RED, 2)
+
             if frame is None:
                 print("frame capture failed")
                 break
@@ -127,10 +171,13 @@ class ChessCam:
         iter = 0
         while len(all_corners) < n_ave and iter < max_tries:
             print(f'iter: {iter}/{max_tries} {len(all_corners)}/{n_ave}')
-            ret, frame = self.vid.read()
+            frame = self.capture_raw()
+            if frame is None:
+                raise ValueError("Unable to capture image")
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             #ret, corners = cv2.findChessboardCorners(gray, (7, 7))
             ret, corners = cv2.findChessboardCorners(gray, (7, 3))
+            print('corners.shape', corners.shape)
             if ret:
                 font = getattr(cv2, defaults.font_name)
                 corners = corners.squeeze()
@@ -145,7 +192,7 @@ class ChessCam:
         all_corners = np.array(all_corners)
         corners = np.mean(all_corners, axis=0)
 
-        ret, image = self.vid.read()
+        image = self.capture_raw()
         font = getattr(cv2, defaults.font_name)
         for i, row in enumerate(corners): ## 7x
             for j, c in enumerate(row):   ## 3x
@@ -160,22 +207,47 @@ class ChessCam:
         _j = np.array([-2, -1, 3, 4])
         j, i = Util.flatmeshgrid(_j, _i)
         xy = Util.eval_plane(cx, cy, i, j).reshape((7, 4, 2))
+        orig_corners = corners
         corners = np.column_stack([xy[:,:2], corners, xy[:,2:]])
 
 ##############################################################################
-#        xy = corners.reshape((-1, 2))
-#        pl.plot(xy[:,0], xy[:,1], 'wo')
-#        for i, row in enumerate(corners): ## 7x
-#            for j, c in enumerate(row):   ## 7x
-#                pos = tuple(c.astype(int))
-#                cv2.circle(image,  pos, 10, (56, 123, 26), 4)
-#
-#                image = cv2.putText(image, f'{i}{j}', pos, font, 
-#                                    1, GREEN, 1, cv2.LINE_AA)
-#        pl.imshow(image)
-#        input('here')
+        if False:### double check corners?
+            xy = corners.reshape((-1, 2))
+            orig_xy = orig_corners.reshape((-1, 2))
+            pl.plot(xy[:,0], xy[:,1], 'wo')
+            pl.plot(orig_xy[:,0], orig_xy[:,1], 'kx')
+            for i, row in enumerate(corners): ## 7x
+                for j, c in enumerate(row):   ## 7x
+                    pos = tuple(c.astype(int))
+                    cv2.circle(image,  pos, 10, (56, 123, 26), 4)
+
+                    image = cv2.putText(image, f'{i}{j}', pos, font, 
+                                        1, GREEN, 1, cv2.LINE_AA)
+            pl.imshow(image)
+            input('here')
 ##############################################################################
         return corners
+
+    def abs_square_occupied(self, i, j, rect=None):
+        if rect is None:
+            rect = self.capture_rectified()
+        sq, bbox = self.crop_abs_square(rect, i, j)
+        nbin = 256
+        hist = cv2.calcHist([sq],[0],None,[nbin],[0,nbin])
+        hist = hist[1:] + hist[:-1]
+        score = np.sum(hist > 1) 
+        max = np.max(hist)
+        x = score
+        y = max
+        return y < 5 * (x-50) + 40 ### decsion
+
+    def square_occupied(self, alg, rect=None):
+        i = ord(alg[0]) - ord('a') + 1
+        j = 9 - int(alg[1])
+        if self.side == chess.BLACK:
+            j = 9 - j
+            i = 9 - i
+        return self.abs_square_occupied(i, j, rect)
     
     def calibrate(self):
         # Capture the video frame
@@ -209,7 +281,7 @@ class ChessCam:
         M = cv2.getPerspectiveTransform(input_pts,output_pts)
         font = getattr(cv2, defaults.font_name)
         while True:
-            ret, frame = self.vid.read()
+            frame = self.capture_raw()
             rectified = cv2.warpPerspective(frame, M, (IM_HEIGHT, IM_HEIGHT),
                                        flags=cv2.INTER_LINEAR)        
 
@@ -231,32 +303,87 @@ class ChessCam:
         print('wrote', self.cal_npz)
         print('Calibaration complete.')
         cv2.destroyAllWindows()
+        self.perspective_matrix = perspective_matrix
         return M, coeff
-    
-if __name__ == '__main__':
+
+    def __del__(self):
+        self.vid.release()
+
+if __name__ == '__main__' and n_cam > 0:
+    desc = 'Chess camera utility library'
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument('-c','--calibrate',
+                        help='Calibrate board area',
+                        required=False, default=False)
+    parser.add_argument('-d','--display',
+                        help='Display board area',
+                        required=False, default="True")
+    args = parser.parse_args()
+
     import matplotlib; matplotlib.interactive(True)
-    cc = ChessCam()
-    #cc.calibrate()
-    #input('here')
-    #here
+    cc = ChessCam(camera_number = 0)
+    if args.calibrate:
+        cc.calibrate()
+        sys.exit()
+    #input('re place pieces')
     rect = cc.capture_rectified()
     jpg = 'colortest.jpg'
-    cv2.imwrite(jpg, rect)
-    print('wrote', jpg)
-    if False:
-        occupied = np.zeros((8, 8), bool)
-        occupied[:7,0] = True
-        occupied[:7,1] = True
-        occupied[:7,6] = True
-        occupied[:7,7] = True
-        occupied[6,:] = True
+    #cv2.imwrite(jpg, rect)
+    #print('wrote', jpg)
+    if True:
+        white_squares = np.zeros((8, 8), bool)
+        black_squares = np.zeros((8, 8), bool)
+        white_squares[:,0] = True
+        white_squares[:,1] = True
 
-        pl.figure(1, figsize=(5, 5)); pl.clf()
-        fig, ax = pl.subplots(8,8, num=1)
+        black_squares[:,6] = True
+        black_squares[:,7] = True
 
+        occupied = np.logical_or(black_squares, white_squares)
+
+        pl.figure(1, figsize=(12, 12)); pl.clf()
+        fig, ax = pl.subplots(8, 8, num=1)
+
+        nbin = 256
+
+        pl.figure(3, figsize=(12, 12)); pl.clf()
+        hist_fig, hist_ax = pl.subplots(6, num=3)
+        hist_ax[0].set_ylabel('white white ')
+        hist_ax[1].set_ylabel('white black')
+        hist_ax[2].set_ylabel('black white')
+        hist_ax[3].set_ylabel('black black')
+        hist_ax[4].set_ylabel('empty white')
+        hist_ax[5].set_ylabel('empty black')
+        white_hists = []
+        black_hists = []
+        white_square_hists = []
+        black_square_hists = []
+        for i in range(8):
+            for j in range(8):
+                sq, bbox = cc.crop_abs_square(rect, i+1, j+1)
+                hist = cv2.calcHist([sq],[0],None,[nbin],[0,nbin])
+                if white_squares[i][j]:
+                    white_hists.append(hist)
+                    if (i + j) % 2 == 1:                    
+                        hist_ax[0].plot(hist)
+                    else:
+                        hist_ax[1].plot(hist)
+                        
+                elif black_squares[i][j]:
+                    black_hists.append(hist)
+                    if (i + j) % 2 == 1:                                        
+                        hist_ax[2].plot(hist)
+                    else:
+                        hist_ax[3].plot(hist)
+                elif (i + j) % 2 == 1:
+                    hist_ax[4].plot(hist)
+                else:
+                    hist_ax[5].plot(hist)
+                    
+
+        tops = {True:[], False:[]}
         scores = {True:[], False:[]}
         maxes = {True:[], False:[]}
-        nbin = 256
         for i in range(8):
             for j in range(8):
                 sq, bbox = cc.crop_abs_square(rect, i+1, j+1)
@@ -265,25 +392,57 @@ if __name__ == '__main__':
                 x = np.arange(len(hist))/len(hist) * sq.shape[0]
                 y = (1 - hist / np.max(hist)) * sq.shape[1]
                 thresh = 10
-                ax[i][j].imshow(sq)
-                ax[i][j].plot(x, y)
-                ax[i][j].axis('off')
-                ax[i][j].text(15, 5, np.sum(hist > 1), color='r')
-                ax[i][j].text(15, 10, np.sum(hist > 2), color='g')
-                ax[i][j].text(15, 15, np.max(hist), color='b')
-                if occupied[i][j]:
+                ax[i][7-j].imshow(sq[:,:,(2,1,0)].transpose((1,0,2)))
+                ax[i][7-j].plot(x, y)
+                ax[i][7-j].axis('off')
+                ax[i][7-j].text(15, 5, np.sum(hist > 1), color='r')
+                ax[i][7-j].text(15, 10, np.sum(hist > 2), color='g')
+                ax[i][7-j].text(15, 15, np.max(hist), color='b')
+                if white_squares[i][j]:
                     ax[i][j].text(5, 15, 'X', color='w')
+                elif black_squares[i][j]:
+                    ax[i][j].text(5, 15, 'X', color='b')
+
+                if cc.abs_square_occupied(i+1, j+1, rect):
+                    ax[i][j].text(0, 15, '!!', color='w')
                 score = [np.sum(hist > t) for t in [1, 2]]
                 scores[occupied[i][j]].append(score)
+
+                top = np.sum(hist[180:])
+                tops[occupied[i][j]].append(top)
+
                 maxes[occupied[i][j]].append(np.max(hist))
-
-
 
         pl.figure(2, figsize=(12, 12)); pl.clf()
         fig, ax = pl.subplots(1, num=2)
         markers = ['.', 'x']
+        XX = []
+        YY = []
+        LL = []
         for i in range(2):
             s = np.array(scores[i])
+            t = np.array(tops[i])
             ax.plot(s[:,0], maxes[i], markers[i])
-            #ax.plot(s[:,1], maxes[i], markers[i], markersize=5)
+            XX.append(s[:,0])
+            YY.append(maxes[i])
+            LL.append(np.full_like(maxes[i], i))
+            #ax.plot(t, maxes[i], markers[i], markersize=5, color='r')
+        x = np.array([40, 75])
+        pl.plot(x, 5 * (x-50) + 40, 'k--')
+
+        if False:
+            ### find best line of separation
+            XX = np.hstack(XX)
+            YY = np.hstack(YY)
+            LL = np.hstack(LL)
+            XY = np.column_stack([XX, YY])
+            gp0 = XY[LL == 0]
+            gp1 = XY[LL == 1]
+            print('XX')
+            print(','.join(map(str, XX)))
+            print('YY')
+            print(','.join(map(str, YY)))
+            print('LL')
+            print(','.join(map(str, LL)))
+            
         input('huh?>')
