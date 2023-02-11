@@ -28,6 +28,8 @@ client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 
+#client.connect("192.168.212.186", 1883, keepalive=60)
+#client.connect("192.168.7.130", 1883, keepalive=60)
 client.connect("localhost", 1883, keepalive=60)
 
 # Blocking call that processes network traffic, dispatches callbacks and

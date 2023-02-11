@@ -43,7 +43,7 @@ class MqttMessageHandler:
             svg = chess.svg.board(board,size=640, flipped=False,
                                   lastmove=lastmove,
                                   colors=self.colors)
-            open(".board.svg", 'w').write(svg)
+            open("board.svg", 'w').write(svg)
             #print('wrote .board.svg')
 
 client = mqtt.Client()
@@ -51,5 +51,7 @@ handler = MqttMessageHandler()
 client.on_connect = handler.on_connect
 client.on_message = handler.on_message
 
-client.connect("192.168.7.130", 1883, keepalive=60)
+#client.connect("192.168.212.186", 1883, keepalive=60)
+#client.connect("192.168.7.130", 1883, keepalive=60)
+client.connect("localhost", 1883, keepalive=60)
 client.loop_forever()

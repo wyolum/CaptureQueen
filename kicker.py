@@ -1,8 +1,9 @@
 import subprocess
 import os
 from datetime import datetime
+import os.path
 
-path = '/home/pi/code/CaptureQueen'
+path = os.path.dirname(__file__)
 
 def getTasks(script):
     cmd = f'ps -ef | grep {script} | grep -v grep'

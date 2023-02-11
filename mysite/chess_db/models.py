@@ -1,5 +1,12 @@
 from django.db import models
+
+import os.path
+import sys
+mydir = os.path.dirname(__file__)
+capture_queen_dir = os.path.abspath(os.path.join(mydir, '../../'))
+sys.path.append(capture_queen_dir)
 import chess_db_functions
+
 # Create your models here.
 
 class Game(models.Model):

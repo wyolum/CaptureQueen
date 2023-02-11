@@ -6,6 +6,9 @@ module king(){
   }
 
   translate([-6.75, 0, 73.86])rotate([90, 0, 0])translate([0, 0, -2])linear_extrude(height=4)
-    import(file="my_king_cross.svg");
+    import(file="profiles/my_king_cross.svg");
 }
-king();
+difference(){
+  king();
+  cylinder(d=12.7, h=3.17, $fn=50);
+}

@@ -5,10 +5,12 @@ from datetime import datetime
 import sqlite3
 from collections import defaultdict
 import defaults
+import os.path
 
-DB_FILENAME = 'chess.db'
-BASE_DIR = 'home/pi/code/mysite'
-DB_FILENAME = '/home/pi/code/CaptureQueen/mysite/db.sqlite3'
+mydir = os.path.dirname(__file__)
+
+DB_FILENAME = os.path.join(mydir, 'mysite/db.sqlite3')
+
 def rename(name):
     return f'chess_db_{name.lower()}'
 

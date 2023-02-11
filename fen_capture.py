@@ -280,8 +280,8 @@ def mqtt_gather_events():
         if msg.topic not in out:
             out[msg.topic] = []
         payload = msg.payload.decode('utf-8')
-        out[msg.topic].append(payload)
         print(msg.topic, payload)
+        out[msg.topic].append(payload)
     return out
 
 mqtt_subscribe(on_mqtt)
@@ -304,18 +304,17 @@ open('.fen', 'w').write(fen)
 
 def find_move(rectified, last_rectified):
     if last_rectified is not None:
-        delta = cv2.absdiff(rectified, last_rectified)
+        delta = [cv2.absdiff(rectified[k], last_rectified[k]) for k in range(2)]
         if False:
-            cv2.imshow("delta", delta)
+            [cv2.imshow(f"delta{k}", delta[k]) for k in range(2)]
         sum_delta = np.sum(delta)
         BUMP_THRESH = 10000000
         if sum_delta > BUMP_THRESH:
             print(f'Board moved {sum_delta} > {BUMP_THRESH}')
-        thresh = np.max(delta, axis=-1)
+        thresh = [np.max(delta[k], axis=-1) for k in range(2)]
     else:
         thresh = None
 
-    changes = []
     if thresh is None:
         return
 
@@ -326,10 +325,8 @@ def find_move(rectified, last_rectified):
             continue
         uci = move.uci()
         sq0, bbox0 = cam.crop_square(thresh, uci[:2])
-        if (cam.square_occupied(uci[:2], rectified) or
-            not cam.square_occupied(uci[2:4], rectified)):
-            #print('not this move:', uci, cam.square_occupied(uci[:2], rectified),
-            #      cam.square_occupied(uci[2:4], rectified))
+        if (cam.square_occupied(rectified, uci[:2]) or
+            not cam.square_occupied(rectified, uci[2:4])):
             continue
         sq1, bbox1 = cam.crop_square(thresh, uci[2:4])
         sqs = [sq0, sq1]
@@ -349,8 +346,9 @@ def find_move(rectified, last_rectified):
             row = uci[1]
             sq2, bbox2 = cam.crop_square(thresh, f'{col}{row}')
             sqs.append(sq2)
-            
+        
         change = np.array([int(np.sum(sq)) for sq in sqs])
+        print(change)
         total_change = np.sum(change)
         change_thresh = 5000
         change_count = np.sum(change > change_thresh)
@@ -371,20 +369,8 @@ def find_move_and_update_board():
     global last_rectified
     moves = []
     start = time.time()
-    for i in range(1):
-        rectified = cam.capture_rectified()
-        out = find_move(rectified, last_rectified)
-        moves.append(out)
-    moves.append(out) ### just take one?
-    if moves[0] != moves[1]:
-        rectified = cam.capture_rectified()
-        tie_break = find_move(rectified, last_rectified)
-        if tie_break == moves[0]:
-            out = moves[0]
-        elif tie_break == moves[1]:
-            out = moves[1]
-        else:
-            out = None
+    rectified = cam.capture_rectified()
+    out = find_move(rectified, last_rectified)
         
     print(f'{(time.time() - start) * 1000:.0f}ms')
     last_rectified = rectified.copy()
@@ -398,7 +384,7 @@ def find_move_and_update_board():
         print(fen, file=open(".fen", 'w'), flush=True)
     return out
 
-cam = chesscam.ChessCam()
+cam = chesscam.ChessCam(camera_number=2)
 
 move_number = 0
 
@@ -412,11 +398,13 @@ def check_flip():
     return balance < FLIP_THRESH
 
 def get_side():
+    rectified = cam.capture_rectified()
+
     balance = 0
     for j in [1, 2]:
         for i in range(1, 9):
-            balance += np.mean(cam.crop_abs_square(rectified, i, j)[0])
-            balance -= np.mean(cam.crop_abs_square(rectified, i, 9-j)[0])
+            balance += np.mean(cam.abs_crop_square(rectified, i, j)[0])
+            balance -= np.mean(cam.abs_crop_square(rectified, i, 9-j)[0])
             cam.draw_abs_square(rectified, i, j, RED, 5)
             cam.draw_abs_square(rectified, i, 9-j, BLUE, 5)
     if balance > 0:
@@ -437,41 +425,6 @@ kicker.kick('mysite/manage.py', args=('runserver',))
 game_on = False
 __last_move = False
 
-def get_rectified():
-    global last_rectified
-    rectified = cam.capture_rectified()
-    
-    n_zeros = 0
-    max_zeros = 10
-    while True: ## check for motion
-        if last_rectified is None:
-            break
-        new_rectified = cam.capture_rectified()
-        delta1 = cv2.absdiff(rectified, new_rectified) ### compare to last frame
-        delta2 = cv2.absdiff(last_rectified,
-                            new_rectified) ### compare to last move
-        threshold = 30
-        max_value = 255
-        sum_deltas = []
-        for delta in [delta1, delta2]:
-            thresh = cv2.threshold(delta, threshold, max_value,
-                                   cv2.THRESH_BINARY)[1]
-            sum_delta = np.sum(thresh)
-            sum_deltas.append(sum_delta)
-            #print(sum_delta, end=' ')
-        #print()
-        rectified = new_rectified
-        if sum_deltas[0] < 10 and sum_deltas[1] < 10e6:
-            break
-        if sum_deltas[0] == 0:
-            n_zeros += 1
-            if n_zeros > max_zeros:
-                last_rectified = None
-                break
-        else: ## give up after all motion has stopped for a while!
-            n_zeros = 0
-    return rectified
-
 def render(renderer, board, side, colors):
     thread = threading.Thread(target=renderer.render,
                               args=(board,side==chess.BLACK and not cam.flip_board),
@@ -489,7 +442,6 @@ class Renderers:
 mqttr = MqttRenderer
 renderers = Renderers([mqttr])
 
-rectified = get_rectified()
 dark_green = '#66aa66'
 dark_red = '#aa3333'
 colors = {'square dark':dark_red,
@@ -501,11 +453,10 @@ colors = {'square dark':dark_red,
 colors = defaults.colors          
 
 def update_camera_view(rectified):
-    return
     if cam.flip_board:
-        view = rectified[::-1, ::-1]
+        view = rectified[0][::-1, ::-1]
     else:
-        view = rectified
+        view = rectified[0]
     cv2.imshow('view', view)
     
 side = get_side()
@@ -518,7 +469,7 @@ def get_position_image_filename(game_id, move_numner):
     return f'captures/{game_id:04d}_{move_number:04d}.png'
 def write_position_image(rectified, game_id, move_number):
     png = get_position_image_filename(game_id, move_number)
-    cv2.imwrite(png, rectified)    
+    cv2.imwrite(png, rectified[0])    
 def read_position_image(game_id, move_number):
     png = get_position_image_filename(game_id, move_number)
     if os.path.exists(png):
@@ -538,12 +489,10 @@ def tick(label):
     tick.last_tick = now
 tick.last_tick = time.time()
 while True:
-    tick('start')
+    rectified = cam.capture_rectified()
     last_time_timer = time.time()
     key = chr(cv2.waitKey(1) & 0xFF)
-    tick('waitkey')
     mqtt_events = mqtt_gather_events()
-    tick('mqqt_events')
     clock_hit = False
     if 'capture_queen.underpromote' in mqtt_events:
         msg = mqtt_events['capture_queen.underpromote'][0].strip()
@@ -623,10 +572,9 @@ while True:
         clock_hit = True
         old_board = None
 
-    tick('pre get_rect')    
-    rectified = get_rectified()
-    tick('post get_rect')        
     if not game_on:
+        #tick('pre get_rect')    
+        #tick('post get_rect')        
         ranks = str(clock_board).splitlines()[:8]
         for j, rank in enumerate(ranks):
             rank = rank[0::2]
@@ -638,14 +586,14 @@ while True:
                         color = WHITE
                     else:
                         color = GRAY
-                    cam.draw_square(rectified, f'{letter}{number}', color, 2)
+                    cam.draw_square(rectified, f'{letter}{number}', color, 1)
         #for i in [1, 2]:
         #    for letter in 'abcdefgh':
         #        cam.draw_square(rectified, f'{letter}{i}', WHITE, 2)
         #        cam.draw_square(rectified, f'{letter}{9-i}', GRAY, 2)
 
         bbox = cam.get_board_bbox().astype(int)
-        cv2.rectangle(rectified, tuple(bbox[0]), tuple(bbox[2]), WHITE, 1)
+        [cv2.rectangle(rectified[k], tuple(bbox[0]), tuple(bbox[2]), WHITE, 1) for k in range(2)]
         update_camera_view(rectified)
     if 'capture_queen.draw' in mqtt_events:
         clock_board.draw()
@@ -659,17 +607,20 @@ while True:
     if key == 'q' or 'capture_queen.quit' in mqtt_events:
         break
     if key == 'x' or clock_hit:
+        if key == 'x':
+            print('x hit')
+        else:
+            print('clock hit!')
+
         if not game_on:
-            rectified = get_rectified()
             ### show the plane board
             last_rectified = rectified.copy()
+            rectified = cam.capture_rectified()
             update_camera_view(rectified)
         game_on = True
         cv2.destroyWindow("Previous Moves")
 
-        tick('pre move')
         move = find_move_and_update_board()
-        tick('post move')
         if move:
             __last_move = move
             fen = clock_board.fen()
@@ -686,6 +637,7 @@ while True:
         #print(['White', 'Black'][side == chess.BLACK])
                 
     if not game_on and key == 's':
+        print('swap')
         if side == chess.WHITE:
             side = chess.BLACK
         else:
@@ -722,9 +674,10 @@ while True:
         mqtt_clock_reset(initial_seconds, increment_seconds)
         render(renderers, None, side, colors)        
         game_on = False
-        
+    cam.vid.read() ### clear buffer
     # the 'q' button is set as the
     # quitting button you may use any
     # desired button of your choice
 # Destroy all the windows
+del cam
 cv2.destroyAllWindows()
